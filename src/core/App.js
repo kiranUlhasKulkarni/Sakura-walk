@@ -259,6 +259,7 @@ export class App {
     // the bursts colour the characters' rims and lift the whole frame a touch
     this.lighting.characterLook.flash.copy(fl.color).multiplyScalar(fl.level * 0.5);
     this.post.u.uFlash.value = Math.max(this.flashHold ?? 0, fl.level * 0.018);
+    if (this.vortex.uniforms.uAmount.value > 0) this.vortex.uniforms.uFlash.value.set(fl.color.r, fl.color.g, fl.color.b).multiplyScalar(fl.level * 0.6);
     if (this.cast) this.lighting.focus.copy(this.cast.coupleCenter(this.focus).setY(0));
     this.lighting.update(dt, this.time, this.camera);
     this.look?.update();

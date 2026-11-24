@@ -46,7 +46,11 @@ export const ActV = {
     const him = cast.him, her = cast.her;
     const C = STATIONS.plaza.center.clone().setY(0);
     this.C = C;
-    app.injuries ??= new Injuries(him); // they last until YES — even across a replay of the question
+    // a clean head when the proposal begins: any injuries left from an earlier run are cleared
+    // (new ones still come with each NO, and stay until YES)
+    app.injuries?.dispose();
+    app.injuries = new Injuries(him);
+    this.nos = 0;
     this.inj = app.injuries;
     // the ring box (in the scene, carried in his hands)
     this.box = ringBox(app.envMap);
@@ -59,6 +63,7 @@ export const ActV = {
     });
 
     letterbox(true);
+    cast.butterflies(false); // nothing fluttering round his head in the close moments
     setTimeout(() => actCard('V', 'The Question', 5), 600);
     // the music dips, the sky quietens
     music.duckTo(0.55); // "Marry You" dips as she steps up to him
@@ -87,7 +92,7 @@ export const ActV = {
     ]);
     await wait(ctx, 0.8);
 
-    // ── ask, until she says yes ──
+    // ── she asks, until he says yes ──
     for (;;) {
       await this.propose(ctx);
       this.shot = 'question';
@@ -130,9 +135,12 @@ export const ActV = {
     });
     await wait(ctx, 1.1);
     await ctx.clock.tween(0.9, (k) => (box.hinge.rotation.x = -1.9 * k)); // the lid opens
-    // he's floored: a hand to his chest
-    const chest = () => (him.pose.b.chest?.getWorldPosition(v()) ?? him.root.position.clone().setY(1.3)).addScaledVector(him.root.getWorldDirection(v()), 0.15);
-    this.setReach(him, 'R', 0.9, () => chest().addScaledVector(new Vector3().crossVectors(him.root.getWorldDirection(v()), UP), -0.05), 3);
+    // he's moved: standing easy, one hand opening gently toward her (palm up, a soft elbow),
+    // the other relaxed at his side, looking at her
+    this.setReach(him, 'R', 0.7, () => {
+      const f = him.root.getWorldDirection(v()).setY(0).normalize();
+      return him.root.position.clone().addScaledVector(f, 0.34).addScaledVector(new Vector3().crossVectors(f, UP), 0.14).setY(him.root.position.y + 0.98);
+    }, 1.6);
     await wait(ctx, 1.4);
   },
 
@@ -189,15 +197,27 @@ export const ActV = {
     const lvl = this.inj.add();
     this.dizzy = true;
     // she huffs, arms folded, turning half away
-    const hs = () => new Vector3().crossVectors(her.root.getWorldDirection(v()), UP);
-    const chest = () => (her.pose.b.chest?.getWorldPosition(v()) ?? her.root.position.clone().setY(1.2)).addScaledVector(her.root.getWorldDirection(v()), 0.16).add(new Vector3(0, -0.06, 0));
-    this.setReach(her, 'L', 0.9, () => chest().addScaledVector(hs(), 0.07), 4);
-    this.setReach(her, 'R', 0.9, () => chest().addScaledVector(hs(), -0.07).add(new Vector3(0, 0.03, 0)), 4);
+    // she huffs, arms folded, turning half away: forearms crossed one over the other in front of her
+    // ribs, elbows forward and clear of her body (each hand rests by the other arm's elbow), shoulders
+    // level, chin up — a clean pout, no clipping
+    const hs = () => new Vector3().crossVectors(her.root.getWorldDirection(v()), UP); // her right
+    const ribs = () => {
+      const f = her.root.getWorldDirection(v()).setY(0).normalize();
+      return (her.pose.b.chest?.getWorldPosition(v()) ?? her.root.position.clone().setY(1.2)).addScaledVector(f, 0.2).add(new Vector3(0, -0.1, 0));
+    };
+    this.setReach(her, 'L', 1, () => ribs().addScaledVector(hs(), 0.12), 4); // left hand under the right elbow
+    this.setReach(her, 'R', 1, () => ribs().addScaledVector(hs(), -0.12).addScaledVector(her.root.getWorldDirection(v()), 0.035).add(new Vector3(0, 0.035, 0)), 4); // right forearm over it
+    // relaxed hands lying along the other forearm, toward the outside (not fists pointing up)
+    her.pose.reach.L.handDirFn = () => hs().add(new Vector3(0, -0.1, 0)).normalize();
+    her.pose.reach.R.handDirFn = () => hs().negate().add(new Vector3(0, -0.1, 0)).normalize();
+    ctx.clock.tween(0.6, (k) => (her.pose.gazeUp = 0.1 * k)); // chin up
     movers.turnTo(her, her.root.rotation.y + 1.1, { rate: 3 });
     await wait(ctx, 1.8);
     this.dizzy = false;
     // he gets back up, rubbing his head — the injury stays
     this.shot = 'ask';
+    ctx.clock.tween(0.6, (k) => (her.pose.gazeUp = 0.1 * (1 - k)));
+    her.pose.reach.L.handDirFn = her.pose.reach.R.handDirFn = null;
     await ctx.clock.tween(1.0, (k) => (him.pose.sit.w = 1 - k));
     this.setReach(him, 'R', 0.9, () => (him.pose.b.head?.getWorldPosition(v()) ?? him.root.position.clone().setY(1.6)).add(new Vector3(0, 0.16, 0)).addScaledVector(him.root.getWorldDirection(v()), 0.02), 4);
     flashText(['Ow…', 'Ouch…', 'Okay… one more try?', 'Still worth it.'][Math.min(3, lvl - 1)], 'flash-text--miss');
@@ -480,6 +500,7 @@ export const ActV = {
       a.pose.lift = 0;
     }
     this.box?.ring.removeFromParent();
+    cast?.butterflies(true);
     // the climax's surge settles back
     ctx.app.flashHold = 0;
     ctx.app.vortex?.set(null, 0);

@@ -8,9 +8,10 @@ import {
  * with a sparkling stone) and his INJURIES — every "NO" earns one more, and
  * they all stay on him until she says YES:
  *   1  a black eye          (a soft purple-blue bruise round his left eye)
- *   2  a head bandage       (gauze wound round his forehead, a tail at the back)
- *   3  a sticking plaster   (a crossed pair on his right cheek)
- *   4+ a bump on the head   (a shiny pink lump on top)
+ *   2  a cheek bruise       (smaller, on his right cheekbone)
+ *   3  a sticking plaster   (a crossed skin-tone pair, low on his left cheek)
+ *   4+ a scratch            (a thin red line along his jaw, one more per NO)
+ * Every one sits on his face below the hairline — never on his hair or crown.
  */
 export function ringBox(envMap) {
   const g = new Group();
@@ -139,28 +140,28 @@ export class Injuries {
       bruise.renderOrder = 3;
       this.attach(bruise, { up: 0.138, fwd: 0.093, right: -0.034, face: 'fwd' });
     } else if (L === 2) {
-      const tex = gauzeTexture();
-      tex.wrapS = 1000; // RepeatWrapping
-      tex.repeat.set(4, 1);
+      // a second, smaller bruise on his right cheekbone (everything stays on his FACE, below the
+      // hairline: nothing bright ever sits on his hair or crown)
+      const tex = bruiseTexture();
       this.textures.push(tex);
-      const m = new MeshStandardMaterial({ map: tex, roughness: 0.9, side: DoubleSide, transparent: true, opacity: 1, emissive: new Color(0.34, 0.32, 0.3) });
-      const band = new Mesh(new CylinderGeometry(0.1, 0.097, 0.034, 28, 1, true), m);
-      this.attach(band, { up: 0.19, fwd: 0.006, face: 'fwd' }); // cylinder axis along the head's up: round the forehead
-      // the knotted tails at the back
-      for (const k of [-1, 1]) {
-        const tail = new Mesh(new PlaneGeometry(0.022, 0.07), m);
-        this.attach(tail, { up: 0.16, fwd: -0.1, right: k * 0.018, face: 'fwd', spin: k * 0.35 });
-      }
+      const m = new MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, opacity: 1 });
+      const bruise = new Mesh(new PlaneGeometry(0.038, 0.03), m);
+      bruise.renderOrder = 3;
+      this.attach(bruise, { up: 0.095, fwd: 0.09, right: 0.048, face: 'fwd' });
     } else if (L === 3) {
-      const m = new MeshStandardMaterial({ color: new Color(0.86, 0.66, 0.5), emissive: new Color(0.3, 0.22, 0.16), roughness: 0.8, transparent: true, opacity: 1 });
+      // a small skin-tone sticking plaster (a crossed pair) low on his left cheek
+      const m = new MeshStandardMaterial({ color: new Color(0.72, 0.52, 0.4), roughness: 0.8, transparent: true, opacity: 1 });
       for (const k of [-1, 1]) {
-        const strip = new Mesh(new BoxGeometry(0.048, 0.013, 0.002), m);
-        this.attach(strip, { up: 0.1, fwd: 0.088, right: 0.05, face: 'fwd', spin: k * 0.6 });
+        const strip = new Mesh(new BoxGeometry(0.036, 0.01, 0.002), m);
+        this.attach(strip, { up: 0.075, fwd: 0.09, right: -0.045, face: 'fwd', spin: k * 0.6 });
       }
     } else {
-      const m = new MeshStandardMaterial({ color: new Color(0.95, 0.55, 0.6), emissive: new Color(0.25, 0.1, 0.12), roughness: 0.35, transparent: true, opacity: 1 });
-      const bump = new Mesh(new SphereGeometry(0.028 + Math.min(4, L - 4) * 0.006, 16, 10), m);
-      this.attach(bump, { up: 0.232 + (L - 4) * 0.006, fwd: 0.02, right: 0.02, face: 'up' });
+      // a little red scratch along his jaw (one more for every further NO)
+      const m = new MeshBasicMaterial({ color: new Color(0.55, 0.12, 0.1), transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+      const k = Math.min(3, L - 4);
+      const scratch = new Mesh(new PlaneGeometry(0.03, 0.0035), m);
+      scratch.renderOrder = 3;
+      this.attach(scratch, { up: 0.035 - k * 0.008, fwd: 0.088, right: 0.035 - k * 0.012, face: 'fwd', spin: 0.4 });
     }
     return L;
   }

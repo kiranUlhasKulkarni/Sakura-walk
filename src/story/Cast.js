@@ -193,8 +193,9 @@ export const HER = {
   hideMaterials: ['material_23', 'material_24', 'material_25', 'material_26', 'Material.006'],
   // her only clip also held that prop pose: keep just the butterflies that flutter around her
   keepTracks: /^(Bone|wing)/,
-  // her pure-white petticoat glared into the bloom under the character lights: a soft off-white
-  dimWhites: { 'Material.003': 0.7 },
+  // her pure-white petticoat, skirt layer (cloth_2: the hot spot on her lap at the picnic) and
+  // collar ruffles glared into the bloom under the character lights: soft off-whites, no glow
+  dimWhites: { 'Material.003': 0.7, cloth_2: 0.6, cloth: 0.82 },
 };
 
 /**
@@ -405,8 +406,12 @@ export class Cast {
     this.spread.frame = frame;
     this.spread.size = { length, width };
     for (const d of this.spread.dishes) d.scale.setScalar(0.0001);
-    const edge = width / 2 - 0.14;
-    this.spread.seats = { him: new Vector3(0.1, 0, -edge), her: new Vector3(-0.1, 0, edge) };
+    // they sit side by side round one corner of the cloth, each angled toward the other (~0.6 m
+    // apart, legs pointing different ways so they never collide), the sharing plate in front —
+    // close enough to feed each other with a softly bent arm, never a lunge
+    const edge = width / 2 - 0.15;
+    this.spread.seats = { him: new Vector3(0.74, 0, -edge + 0.02), her: new Vector3(length / 2 - 0.18, 0, -0.37) };
+    this.spread.faces = { him: new Vector3(0.75, 0, 0.1), her: new Vector3(0.45, 0, -0.55) }; // where each looks (into the corner, toward the other)
   }
 
   /** A point in the spread's frame → world. */
@@ -437,6 +442,8 @@ export class Cast {
         const k = o.isMesh && HER.dimWhites[o.material?.name];
         if (k && !o.material.userData.dimmed) {
           o.material.color.multiplyScalar(k);
+          o.material.emissive?.setRGB(0, 0, 0);
+          o.material.userData.noGlow = true; // CharacterLook keeps emissive off for these
           o.material.userData.dimmed = true;
         }
       });
@@ -450,7 +457,7 @@ export class Cast {
       her.pose = new PoseRig(her.model, her.root, { family: 'rigify', armOut: 0.42, stride: 1.3, headLock: true });
       reweightSkirt(her.model);
       rigidHair(her.model);
-      // a fitted blush-pink bandana over her crown and hairline, on her head bone — fitted on her
+      // a fitted black bandana over her crown and hairline, on her head bone — fitted on her
       // first posed frame (see update): before that her eye bones aren't placed yet
       her.bandana = null; // arms clear of her flared skirt
     }
@@ -521,6 +528,16 @@ export class Cast {
     neck.getWorldPosition(sc.root.position).sub(off);
     sc.root.position.y -= 0.035; // the loop's middle just below the neck bone, on the collar
     sc.root.position.addScaledVector(this.him.root.getWorldDirection(new Vector3()), 0.025);
+  }
+
+  /**
+   * Her butterflies (they flutter round her): sent away for the close moments — at the proposal
+   * and the kiss one would otherwise flutter right through his hair (the "white patch on his head").
+   */
+  butterflies(on) {
+    this.her?.model.traverse((o) => {
+      if (o.isSkinnedMesh && /^(Material\.00[789]|material)$/.test(o.material?.name ?? '')) o.visible = on;
+    });
   }
 
   /** Centre between the couple at chest height (camera framing helper). */

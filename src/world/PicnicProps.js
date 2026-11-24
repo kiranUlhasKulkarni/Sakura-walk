@@ -318,7 +318,7 @@ export function buildSpread(parent, { length = 2.4, width = 1.5, clothTop = 0.01
   // the long axis runs along x; the couple sit facing each other across z
   const board = place(sushiBoard(rnd), 0, 0, 0);
   place(bento(rnd, { tiers: 2, lidSide: 1 }), -0.42, 0.05, 0.1);
-  place(bento(rnd, { tiers: 1, lidSide: -1 }), 0.45, -0.04, -0.12);
+  place(bento(rnd, { tiers: 1, lidSide: -1 }), 0.2, 0.24, -0.12);
   // onigiri on a bamboo-leaf plate (her side)
   const og = new Group();
   const leaf = mesh(new SphereGeometry(0.11, 16, 6, 0, Math.PI * 2, 0, 0.35), M.leaf());
@@ -344,9 +344,30 @@ export function buildSpread(parent, { length = 2.4, width = 1.5, clothTop = 0.01
     return d;
   });
   place(dg, 0.12, -0.28, -0.1);
-  place(teaSet(), 0.78, 0.18, 0.4);
+  place(teaSet(), -0.82, 0.24, 0.4);
+  // a small sharing plate at the corner where they sit together (Cast.setupSpread): two nigiri and
+  // two onigiri within easy reach of both, for feeding each other (and eating)
+  const sh = new Group();
+  sh.add(plate(0.1, M.plate()));
+  const share = [];
+  [['salmon', -0.035, -0.03], ['tuna', 0.035, 0.03]].forEach(([k, x, z]) => {
+    const n = nigiri(k);
+    n.position.set(x, 0.014, z);
+    n.rotation.y = 0.6;
+    sh.add(n);
+    share.push(n);
+  });
+  [[0.04, -0.035], [-0.04, 0.035]].forEach(([x, z]) => {
+    const o = onigiri();
+    o.scale.setScalar(0.8);
+    o.position.set(x, 0.01, z);
+    o.rotation.y = 0.8;
+    sh.add(o);
+    share.push(o);
+  });
+  place(sh, 0.66, -0.26, 0.3);
   // pieces that can be picked up and eaten (Act II, and the interactive picnic's Eat / Feed Her)
-  return { group, dishes, pick: { onigiri: onis[1], dango: dangos[1], onigiriPlate: og, dangoPlate: dg, sushi: board.userData.nigiri, onigiris: onis } };
+  return { group, dishes, pick: { onigiri: onis[1], dango: dangos[1], onigiriPlate: og, dangoPlate: dg, sushi: board.userData.nigiri, onigiris: onis, share } };
 }
 
 export function disposeSpread(spread) {
@@ -363,7 +384,7 @@ export function hanamiCloth(length = 2.5, width = 1.75) {
   const c = document.createElement('canvas');
   c.width = c.height = S;
   const g = c.getContext('2d');
-  g.fillStyle = '#fbf4f2';
+  g.fillStyle = '#e9dfda'; // a warm off-white: the gingham's light squares never glare in the sun
   g.fillRect(0, 0, S, S);
   const n = 8, w = S / n;
   for (let i = 0; i < n; i += 2) {

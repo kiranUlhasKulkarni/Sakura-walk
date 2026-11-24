@@ -73,7 +73,7 @@ export function theEnd({ onReplay, onWander } = {}) {
   const ui = document.getElementById('ui');
   const el = document.createElement('div');
   el.className = 'the-end';
-  el.innerHTML = `<p class="the-end__kanji">完</p><h2 class="the-end__title">The End</h2><p class="the-end__sub">she said yes</p><div class="the-end__row"><button type="button" data-a="replay">Watch again</button><button type="button" data-a="wander">Wander the park</button></div>`;
+  el.innerHTML = `<p class="the-end__kanji">完</p><h2 class="the-end__title">The End</h2><p class="the-end__sub">he said yes</p><div class="the-end__row"><button type="button" data-a="replay">Watch again</button><button type="button" data-a="wander">Wander the park</button></div>`;
   ui?.appendChild(el);
   requestAnimationFrame(() => el.classList.add('the-end--on'));
   el.querySelector('[data-a="replay"]').addEventListener('click', () => onReplay?.());

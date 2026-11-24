@@ -137,7 +137,7 @@ export const ActIV = {
     this.textCenter = S(106, -3, 31);
     const formed = fw.writeText('MARRY ME', { center: this.textCenter, height: 8.5, stagger: 0.2, flight: 2.3, hold: 7.5, colorA: 'gold', colorB: 'sakura' });
     await wait(ctx, formed + 1.4);
-    // HER message to him: he turns to her, a hand to his heart; she turns to him, smiling
+    // HER message to him: he turns to her, one hand opening toward her; she turns to him, smiling
     this.shot = 'reaction';
     const her = cast.her;
     ctx.clock.tween(1.2, (k) => {
@@ -145,10 +145,11 @@ export const ActIV = {
     });
     if (her) movers.turnTo(her, cast.him.root.position, { rate: 1.8 });
     movers.turnTo(cast.him, her ? her.root.position : C, { rate: 2.2 });
-    if (cast.him.pose) this.setReach(cast.him, 'R', 0.85, () => {
-      const chest = cast.him.pose.b.chest?.getWorldPosition(v()) ?? cast.him.root.position.clone().setY(1.3);
-      return chest.addScaledVector(cast.him.root.getWorldDirection(v()), 0.16).addScaledVector(new Vector3().crossVectors(cast.him.root.getWorldDirection(v()), UP), -0.06);
-    }, 2.5);
+    // (no hand jammed to his chest: one hand opens gently toward her, a soft elbow)
+    if (cast.him.pose) this.setReach(cast.him, 'R', 0.7, () => {
+      const f = cast.him.root.getWorldDirection(v()).setY(0).normalize();
+      return cast.him.root.position.clone().addScaledVector(f, 0.34).addScaledVector(new Vector3().crossVectors(f, UP), 0.14).setY(cast.him.root.position.y + 0.98);
+    }, 1.6);
     await wait(ctx, 3.2);
     if (cast.him.pose) this.setReach(cast.him, 'R', 0, null, 2);
     this.shot = 'text-wide';
@@ -195,10 +196,12 @@ export const ActIV = {
     }
     // a breath — then everybody hits the first beat together
     await wait(ctx, 0.6);
-    for (const d of cast.dancers) {
+    for (const [i, d] of cast.dancers.entries()) {
       d.pose.sync(0);
       d.pose.want = 1;
       d.pose.energy = 1;
+      // the ripple turn passes through the V from her outward: a delay by distance from the centre
+      d.pose.ripple = Math.min(3, spots[i].distanceTo(centre) * 0.55);
     }
     if (her?.pose) {
       her.pose.dance.beat = 0;
@@ -208,19 +211,32 @@ export const ActIV = {
     this.cheer = true;
     ctx.clock.tween(0.4, (k) => her?.pose && (her.pose.dance.w = k));
     const beats = (n) => (n * 60) / 145;
-    const showShots = ['show', 'show-low', 'show-side', 'show-crane', 'show'];
+    // six steps of eight beats: pom swing · high V & step-touch · ripple turn · clap & knee pop ·
+    // diagonal sweep · finale cheer (see DancerRig CHEER), one shot each
+    const showShots = ['show', 'show-low', 'show-crane', 'show-side', 'show-low', 'show'];
     for (const sh of showShots) {
       this.shot = sh;
-      await wait(ctx, beats(10));
+      await wait(ctx, beats(8));
     }
     this.cheer = false;
+    // (the cheer targets were points round her chest: release them before she walks, or her arms
+    // would stay reaching back to where she stood)
+    if (her?.pose) for (const s of ['L', 'R']) this.setReach(her, s, 0, null, 6);
 
     // ── Part 2: she brings him into the middle; the crowd freestyles, circling them ──
     this.shot = 'lead';
     cast.dancers.forEach((d, i) => d.pose.freestyleMode(i));
     if (her) {
       ctx.clock.tween(0.6, (k) => her.pose && (her.pose.dance.w = 1 - k));
-      await movers.walkTo(her, watch.clone().addScaledVector(forward, -0.55), { speed: 1.5, face: watch });
+      // a warm, inviting gesture as she comes to him: her right hand opens forward and out toward
+      // him, palm up, a soft elbow; her left stays relaxed; torso and head upright
+      const welcome = () => {
+        const f = her.root.getWorldDirection(v()).setY(0).normalize();
+        const r = new Vector3().crossVectors(f, UP);
+        return her.root.position.clone().addScaledVector(f, 0.36).addScaledVector(r, 0.2).setY(her.root.position.y + 1.02);
+      };
+      ctx.clock.after(0.5, () => this.setReach(her, 'R', 0.85, welcome, 2.2));
+      await movers.walkTo(her, watch.clone().addScaledVector(forward, -0.55), { speed: 1.3, face: watch });
       // she takes his hand…
       this.setReach(her, 'R', 1, () => him.pose.handPosition('L', v()), 4);
       this.setReach(him, 'L', 1, () => her.pose.handPosition('R', v()), 4);
@@ -371,21 +387,27 @@ export const ActIV = {
       for (const s of ['L', 'R']) {
         const out = s === 'R' ? 1 : -1;
         let o = 0.25, u = -0.3, fw = 0.12;
-        if (move === 'cheerV') {
-          const up = Math.floor(b) % 2 === 0 ? hitK : 1 - hitK;
-          o = 0.24 + 0.24 * up; u = -0.32 + 0.82 * up; fw = 0.1 - 0.05 * up;
-        } else if (move === 'punch') {
-          const k = Math.floor(b) % 4, on = (s === 'L' ? k === 0 : k === 1) || k >= 2 ? hitK : 0;
-          o = 0.12; u = -0.02 + 0.62 * on; fw = 0.22 - 0.12 * on;
-        } else if (move === 'clapHigh') {
-          const c = Math.pow(0.5 + 0.5 * Math.cos(Math.PI * 2 * f), 4);
-          o = 0.12 - 0.09 * c; u = 0.62; fw = 0.08;
-        } else if (move === 'hips') {
-          o = 0.22; u = -0.3; fw = -0.02;
-        } else if (move === 'kick') {
-          o = 0.62; u = 0.12; fw = 0.02;
-        } else if (move === 'wave') {
-          o = 0.3 + Math.sin(Math.PI * b * 0.5) * 0.12 * out; u = 0.58; fw = 0.05;
+        const beat = Math.floor(b);
+        if (move === 'pomSwing') {
+          const side = beat % 2 ? -1 : 1, sw = side * (0.25 + 0.75 * hitK); // + toward her right
+          const mine = (s === 'R') === sw > 0;
+          o = mine ? 0.5 : 0.08; u = mine ? -0.05 : -0.12; fw = mine ? 0.16 : 0.3;
+        } else if (move === 'highVStep') {
+          const clasp = beat % 2 ? hitK : 0, vee = beat % 2 ? 0 : hitK;
+          o = 0.24 + 0.22 * vee - 0.2 * clasp; u = -0.3 + 0.8 * vee + 0.9 * clasp; fw = 0.1;
+        } else if (move === 'ripple') {
+          const r = Math.max(0, Math.sin(Math.PI * Math.min(1, Math.max(0, (b % 8) / 4))));
+          o = 0.24 + 0.2 * r; u = -0.3 + 0.82 * r; fw = 0.1;
+        } else if (move === 'clapKnee') {
+          const c = Math.pow(0.5 + 0.5 * Math.cos(Math.PI * 2 * f), 5);
+          o = 0.15 - 0.12 * c; u = -0.04; fw = 0.3;
+        } else if (move === 'diagSweep') {
+          const ph = (b % 4) / 4, up = Math.sin(Math.PI * Math.min(1, ph * 2)), side = ph < 0.5 ? 1 : -1;
+          const lead = (s === 'R') === side > 0;
+          o = lead ? 0.5 : 0.18; u = -0.32 + 0.86 * up * (lead ? 1 : 0.75); fw = 0.12;
+        } else if (move === 'finale') {
+          const h = Math.min(1, (b % 8) / 0.2);
+          o = 0.24 + 0.24 * h; u = -0.3 + 0.82 * h; fw = 0.06;
         }
         this.setReach(her, s, 1, () => chest.clone().addScaledVector(rightH, out * o).add(new Vector3(0, u, 0)).addScaledVector(fwdH, fw), 14);
       }

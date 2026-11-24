@@ -76,7 +76,7 @@ export class CharacterLook {
     if (!m.isMeshStandardMaterial || this.materials.has(m)) return;
     this.materials.add(m);
     const glow = KEEP_GLOW.test(m.name);
-    m.emissiveIntensity = glow ? 0.25 : 0.06;
+    m.emissiveIntensity = m.userData.noGlow ? 0 : glow ? 0.25 : 0.06;
     // exports often mark fabric fully metallic / mirror-smooth: with an env map that turns
     // white cloth into a glowing mirror. Cloth, skin and hair are dielectric and fairly rough.
     if (!m.metalnessMap) m.metalness = Math.min(m.metalness, 0.05);

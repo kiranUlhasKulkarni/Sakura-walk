@@ -1,9 +1,9 @@
 import { BufferAttribute, BufferGeometry, CanvasTexture, Color, DoubleSide, Group, Matrix4, Mesh, MeshStandardMaterial, PlaneGeometry, RepeatWrapping, SphereGeometry, SRGBColorSpace, Vector3 } from 'three';
 
 /**
- * Her bandana: a soft blush-pink cotton headwrap with cream polka dots and a
- * thin maroon edge (the scarf's colour), worn round her crown over the
- * forehead hairline and tied at the back with a knot and two tails.
+ * Her bandana: a black cotton headwrap with soft creases and stitched hems,
+ * its front edge just above her forehead, climbing past the upper temples
+ * over the crown at the back, tied there with a knot and two tails.
  *
  * It is FITTED to her actual head: at load, her skinned hair (and scalp)
  * vertices are taken in world space, the slab of them where the band sits
@@ -16,28 +16,40 @@ import { BufferAttribute, BufferGeometry, CanvasTexture, Color, DoubleSide, Grou
  */
 function fabric() {
   const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 64;
+  c.width = 512;
+  c.height = 96;
   const g = c.getContext('2d');
-  g.fillStyle = '#ecbcc6';
-  g.fillRect(0, 0, 256, 64);
-  // a soft weave
-  g.globalAlpha = 0.08;
+  g.fillStyle = '#141114';
+  g.fillRect(0, 0, 512, 96);
+  // soft folds: slanted bands of light and shadow across the cloth, so it never reads as a flat silhouette
+  for (let x = -96; x < 512 + 96; x += 23) {
+    const w = 8 + ((x * 37) % 11);
+    const grad = g.createLinearGradient(x, 0, x + w * 2, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.45, `rgba(255,245,250,${0.05 + ((x * 13) % 7) * 0.008})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0.18)');
+    g.fillStyle = grad;
+    g.save();
+    g.translate(x, 0);
+    g.transform(1, 0, 0.35, 1, 0, 0); // slanted, as cloth wrapped round a head creases
+    g.fillRect(0, 0, w * 2, 96);
+    g.restore();
+  }
+  // a fine weave
+  g.globalAlpha = 0.07;
   g.fillStyle = '#ffffff';
-  for (let y = 0; y < 64; y += 2) g.fillRect(0, y, 256, 1);
+  for (let y = 0; y < 96; y += 2) g.fillRect(0, y, 512, 1);
+  for (let x = 0; x < 512; x += 3) g.fillRect(x, 0, 1, 96);
   g.globalAlpha = 1;
-  // cream polka dots
-  g.fillStyle = '#fff4ea';
-  for (let row = 0; row < 3; row++)
-    for (let x = 0; x < 256; x += 22) {
-      g.beginPath();
-      g.arc(x + (row % 2) * 11 + 6, 15 + row * 17, 3.4, 0, Math.PI * 2);
-      g.fill();
-    }
-  // maroon edges, like the scarf she knitted
-  g.fillStyle = '#7a1c2e';
-  g.fillRect(0, 0, 256, 4);
-  g.fillRect(0, 60, 256, 4);
+  // stitched hems along both edges (a shade lighter), and the edges turned under (darker)
+  g.fillStyle = 'rgba(0,0,0,0.55)';
+  g.fillRect(0, 0, 512, 5);
+  g.fillRect(0, 91, 512, 5);
+  g.fillStyle = 'rgba(255,240,245,0.14)';
+  for (let x = 0; x < 512; x += 7) {
+    g.fillRect(x, 8, 4, 1);
+    g.fillRect(x, 87, 4, 1);
+  }
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
   t.wrapS = RepeatWrapping;
@@ -45,7 +57,7 @@ function fabric() {
   return t;
 }
 
-export function fitBandana(actor, { hairMaterials = [], scalpMaterial = 'face.002', width = 0.052, tilt = 0.38 } = {}) {
+export function fitBandana(actor, { hairMaterials = [], scalpMaterial = 'face.002', width = 0.078, tilt = -0.34, browGap = 0.064 } = {}) {
   const head = actor.pose?.b.head;
   if (!head) return null;
   actor.root.updateMatrixWorld(true);
@@ -72,9 +84,10 @@ export function fitBandana(actor, { hairMaterials = [], scalpMaterial = 'face.00
   });
   if (!pts.length) return null;
 
-  // the band's plane: through the hairline above the brows, tilted to run low round the back
+  // the band's plane: its front edge just above the forehead (clear of the brows), tilted so it
+  // climbs past the upper temples and over the crown at the back (where the scalp showed)
   const n = up.clone().multiplyScalar(Math.cos(tilt)).addScaledVector(fwd, -Math.sin(tilt)).normalize();
-  const front = eye.clone().add(new Vector3(0, 0.058, 0));
+  const front = eye.clone().add(new Vector3(0, browGap + width * 0.5 * Math.cos(tilt), 0));
   // the centre of the head on that plane: the centroid of the hair in the slab
   const slab = (p, c) => Math.abs(p.clone().sub(c).dot(n)) < width * 0.55;
   let C = front.clone().addScaledVector(fwd, -0.085);
@@ -106,15 +119,16 @@ export function fitBandana(actor, { hairMaterials = [], scalpMaterial = 'face.00
   R = R.map((r) => (Number.isNaN(r) ? med : Math.min(med * 1.14, Math.max(med * 0.88, r))));
   for (let pass = 0; pass < 4; pass++) R = R.map((r, i) => (R[(i + N - 1) % N] + 2 * r + R[(i + 1) % N]) / 4);
 
-  // the band: 4 rows across its width, gently rounded like folded cotton
-  const rows = [-0.5, -0.18, 0.18, 0.5];
+  // the band: 6 rows across its width, rounded like folded cloth, with soft creases running round it;
+  // it sits a few millimetres proud of the hair everywhere (never inside the scalp)
+  const rows = [-0.5, -0.32, -0.12, 0.12, 0.32, 0.5];
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= N; i++) {
     const a = (i / N) * Math.PI * 2;
     const dir = e1.clone().multiplyScalar(Math.cos(a)).addScaledVector(e2, Math.sin(a));
-    const r = R[i % N] + 0.005;
+    const r = R[i % N] + 0.007;
     rows.forEach((t, j) => {
-      const bulge = (1 - (2 * t) ** 2) * 0.004;
+      const bulge = (1 - (2 * t) ** 2) * 0.005 + Math.max(0, Math.sin(a * 13 + t * 5)) * 0.0022 * (1 - Math.abs(t));
       const p = C.clone().addScaledVector(dir, r + bulge).addScaledVector(n, t * width);
       pos.push(p.x, p.y, p.z);
       uv.push((i / N) * 7, j / (rows.length - 1));
@@ -131,8 +145,9 @@ export function fitBandana(actor, { hairMaterials = [], scalpMaterial = 'face.00
   g.setIndex(idx);
   g.computeVertexNormals();
   const tex = fabric();
-  // a little of the fabric's own colour as emissive: it stays blush pink in the lilac dusk and at night
-  const mat = new MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0, side: DoubleSide, color: new Color(1, 1, 1), emissiveMap: tex, emissive: new Color(0.3, 0.26, 0.27) });
+  // black cotton with a faint sheen (the folds catch the light); a touch of its own texture as
+  // emissive so it keeps its creases at night instead of turning into a silhouette
+  const mat = new MeshStandardMaterial({ map: tex, roughness: 0.66, metalness: 0, side: DoubleSide, color: new Color(1, 1, 1), emissiveMap: tex, emissive: new Color(0.6, 0.55, 0.58) });
   const wrap = new Group();
   wrap.name = 'bandana';
   const band = new Mesh(g, mat);

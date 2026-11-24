@@ -93,7 +93,9 @@ export const ActII = {
       cast.catHer ? movers.walkTo(cast.catHer, centre.clone().addScaledVector(sideDir, -1.25).addScaledVector(awayHer, 0.35), { speed: 0.9, face: centre }) : null,
       cast.catHim ? movers.walkTo(cast.catHim, centre.clone().addScaledVector(sideDir, 0.95).addScaledVector(awayHim, 0.55), { speed: 0.9, face: centre }) : null,
     ]);
-    await Promise.all([movers.turnTo(cast.him, seatHer), cast.her ? movers.turnTo(cast.her, seatHim) : null]);
+    // angled toward each other round the corner, not nose to nose
+    const faceHim = sp.faces ? cast.spreadToWorld(sp.faces.him) : seatHer, faceHer = sp.faces ? cast.spreadToWorld(sp.faces.her) : seatHim;
+    await Promise.all([movers.turnTo(cast.him, faceHim), cast.her ? movers.turnTo(cast.her, faceHer) : null]);
     if (cast.him.pose) cast.him.pose.sit.style = 'agura';
     if (cast.her?.pose) cast.her.pose.sit.style = 'seiza';
     await ctx.clock.tween(1.8, (k) => {
@@ -129,10 +131,10 @@ export const ActII = {
 
     // ── she offers him an onigiri ──
     this.mode = 'feed-her';
-    await this.feed(ctx, cast.her, cast.him, sp.pick.onigiri);
+    await this.feed(ctx, cast.her, cast.him, sp.pick.share[1]); // a piece of tuna nigiri from the sharing plate
     // ── he answers with a piece of sushi ──
     this.mode = 'feed-him';
-    await this.feed(ctx, cast.him, cast.her, sp.pick.sushi.find((n) => n.visible) ?? sp.pick.dango);
+    await this.feed(ctx, cast.him, cast.her, sp.pick.share[0]); // and salmon for her
 
     // ── a gust of petals, a closing crane, and they rise ──
     this.mode = 'crane';
@@ -146,8 +148,13 @@ export const ActII = {
     await wait(ctx, 0.8);
   },
 
-  setReach(actor, w, targetFn, rate = 4) {
-    const r = this.reach.get(actor) ?? { w: 0 };
+  setReach(actor, w, targetFn, rate = 4, side = null) {
+    const r = this.reach.get(actor) ?? { w: 0, side: 'R' };
+    if (side && side !== r.side) {
+      if (actor.pose) actor.pose.reach[r.side].w = 0;
+      r.side = side;
+      r.w = 0;
+    }
     r.want = w;
     if (targetFn) r.target = targetFn;
     r.rate = rate;
@@ -161,7 +168,7 @@ export const ActII = {
    */
   async play(ctx, sp) {
     const { cast } = ctx.app;
-    const pieces = [...sp.pick.sushi, ...sp.pick.onigiris, sp.pick.dango];
+    const pieces = [...sp.pick.share, ...sp.pick.sushi, ...sp.pick.onigiris];
     let did = false;
     for (;;) {
       this.mode = 'spread';
@@ -190,45 +197,58 @@ export const ActII = {
   async feed(ctx, giver, taker, item) {
     if (!giver?.pose || !taker?.pose || !item) return;
     const self = taker === giver;
-    // reach down to it on the plate
-    this.setReach(giver, 1, () => item.getWorldPosition(v()).add(new Vector3(0, 0.03, 0)), 4);
+    // the hand on the receiver's side (for himself: the one nearer the piece)
+    const gFwd = giver.root.getWorldDirection(v()).setY(0).normalize();
+    const gRight = new Vector3().crossVectors(gFwd, new Vector3(0, 1, 0));
+    const toward = (self ? item.getWorldPosition(v()) : taker.root.position.clone()).sub(giver.root.position);
+    const side = toward.dot(gRight) >= 0 ? 'R' : 'L';
+    // 1 — reach down to the piece on the plate (an easy, bent-arm reach: see PoseRig.applyReach)
+    this.setReach(giver, 1, () => item.getWorldPosition(v()).add(new Vector3(0, 0.025, 0)), 3, side);
     await wait(ctx, 1.0);
-    this.held = { item, by: giver };
+    this.held = { item, by: giver, side };
     this.app.scene.attach(item);
     const s0 = item.scale.clone();
-    // across the cloth: the giver shuffles in and leans over the food, the taker leans in to meet it
-    const start = giver.root.position.clone(), startT = taker.root.position.clone();
-    const toward = taker.root.position.clone().sub(giver.root.position).setY(0);
-    const scoot = self ? 0 : Math.min(0.6, Math.max(0, toward.length() - 0.85));
-    if (toward.lengthSq() > 1e-6) toward.normalize();
-    // across the cloth he rises up onto his knees and leans right over; she shuffles in to meet it
-    const leanG = self ? 0.1 : 0.55, leanT = self ? 0 : 0.34, scootT = self ? 0 : 0.34;
-    const sit0 = giver.pose.sit.w, rise = self ? 0 : 0.45;
-    const mouth = () => taker.pose.mouthPosition(v()).addScaledVector(taker.root.getWorldDirection(v()), 0.035);
-    this.setReach(giver, 1, mouth, 2.6);
-    const pose = (k) => {
-      giver.root.position.copy(start).addScaledVector(toward, scoot * k);
-      giver.pose.lean = leanG * k;
-      giver.pose.sit.w = sit0 - rise * k;
-      if (!self) {
-        taker.pose.lean = leanT * k;
-        taker.root.position.copy(startT).addScaledVector(toward, -scootT * k);
-      }
+    // 2 — lift it, unhurried, to a gentle pause just in front of their lips. Both stay seated;
+    //     the giver leans only a little toward them, the receiver a touch forward to meet it.
+    const leanG = self ? 0.05 : 0.12, leanT = self ? 0 : 0.1;
+    this.bite = 0;
+    const lips = () => {
+      const fwd = taker.root.getWorldDirection(v()).setY(0).normalize();
+      // a few cm in front of the mouth, easing closer as they take the bite (never into the face)
+      return taker.pose.mouthPosition(v()).addScaledVector(fwd, 0.075 - 0.04 * this.bite).add(new Vector3(0, -0.01, 0));
     };
-    await ctx.clock.tween(1.4, pose);
-    await wait(ctx, 0.35);
-    // two bites, and it's gone
-    for (const left of [0.62, 0]) {
+    // the reach drives the wrist; aim so the PALM (where the piece sits) arrives at the lips
+    const palmAt = (want) => {
+      const hand = giver.pose.b[`hand${side}`];
+      if (!hand) return want;
+      return want.sub(giver.pose.handPosition(side, v()).sub(hand.getWorldPosition(v())));
+    };
+    this.setReach(giver, 1, () => palmAt(lips()), 1.8);
+    await ctx.clock.tween(1.5, (k) => {
+      giver.pose.lean = leanG * k;
+      if (!self) taker.pose.lean = leanT * k;
+    });
+    await wait(ctx, 0.5); // the little pause, offered
+    // 3 — two small bites: the receiver leans in a little, the piece eases closer, and it's gone
+    for (const left of [0.6, 0]) {
       this.lean = { actor: taker, w: 0, toward: self ? null : giver };
-      await ctx.clock.tween(0.42, (k) => (this.lean.w = Math.sin(k * Math.PI)));
+      await ctx.clock.tween(0.5, (k) => {
+        this.bite = Math.sin(k * Math.PI);
+        this.lean.w = this.bite * 0.7;
+      });
       if (left > 0) item.scale.copy(s0).multiplyScalar(left);
       else item.visible = false;
-      await wait(ctx, 0.55);
+      await wait(ctx, 0.5);
     }
+    this.bite = 0;
     this.held = null;
     this.lean = null;
-    this.setReach(giver, 0, null, 2.5);
-    await ctx.clock.tween(1.2, (k) => pose(1 - k));
+    // 4 — the hand drifts back to rest, they settle back
+    this.setReach(giver, 0, null, 2.0);
+    await ctx.clock.tween(1.1, (k) => {
+      giver.pose.lean = leanG * (1 - k);
+      if (!self) taker.pose.lean = leanT * (1 - k);
+    });
     await wait(ctx, 0.4);
   },
 
@@ -240,9 +260,9 @@ export const ActII = {
       r.w += (r.want - r.w) * damp(r.rate, dt);
       if (!actor.pose) continue;
       if (r.w > 0.02) {
-        actor.pose.reach.R.w = r.w;
-        if (r.target) actor.pose.reach.R.target.copy(r.target());
-      } else if (r.want === 0) actor.pose.reach.R.w = 0; // hand goes back to resting on the thigh
+        actor.pose.reach[r.side].w = r.w;
+        if (r.target) actor.pose.reach[r.side].target.copy(r.target());
+      } else if (r.want === 0) actor.pose.reach[r.side].w = 0; // hand goes back to resting on the thigh
     }
     // camera
     const c = cast.coupleCenter(v());
@@ -327,12 +347,12 @@ export const ActII = {
       const by = this.lean.toward ?? this.held?.by;
       if (by && by !== a) {
         const toward = by.root.position.clone().sub(a.root.position).setY(0).normalize();
-        a.model.position.addScaledVector(toward, 0.03 * this.lean.w);
+        a.model.position.addScaledVector(toward, 0.025 * this.lean.w); // a small lean in for the bite
       }
     }
     const h = this.held;
     if (!h?.by.pose) return;
-    h.by.pose.handPosition('R', h.item.position);
+    h.by.pose.handPosition(h.side ?? 'R', h.item.position);
     h.item.position.y -= 0.01;
   },
 

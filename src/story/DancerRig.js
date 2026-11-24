@@ -464,7 +464,16 @@ export const OUTFITS = [
  * girl, through her arm targets (see cheerArms) — hits the same pose on the
  * same beat. One move per two bars (8 beats).
  */
-export const CHEER = ['cheerV', 'punch', 'clapHigh', 'hips', 'kick', 'cheerV', 'punch', 'wave'];
+export const CHEER = ['pomSwing', 'highVStep', 'ripple', 'clapKnee', 'diagSweep', 'finale'];
+/** The six steps' names, as the routine announces them. */
+export const CHEER_STEPS = {
+  pomSwing: 'Pom swing',
+  highVStep: 'High V & step-touch',
+  ripple: 'Ripple turn',
+  clapKnee: 'Clap & knee pop',
+  diagSweep: 'Diagonal sweep',
+  finale: 'Finale cheer',
+};
 
 /** Snappy beat hits: the limb snaps into the pose in the first fifth of a beat and holds it. */
 const hit = (b) => {
@@ -610,6 +619,7 @@ export class DanceRig {
     o.legR = 0;
     o.stepX = 0;
     o.kneeStraight = 0; // 1: legs kick out straight
+    o.pivot = 0; // hips turn (rad) for pivoting footwork
     if (name === 'pump') {
       // fists punch up on alternate beats
       const pL = Math.max(0, Math.sin(TAU * b * 0.5)), pR = Math.max(0, -Math.sin(TAU * b * 0.5));
@@ -643,6 +653,74 @@ export class DanceRig {
       o.upperR = [0.6 * s, 0, -0.25];
       o.foreL = [-1.0, 0, 0];
       o.foreR = [-1.0, 0, 0];
+    } else if (name === 'pomSwing') {
+      // 1 — opening pom swing: both arms swung together to one side, then the other, on the beat,
+      // a crisp bounce under it
+      const side = Math.floor(b) % 2 ? 1 : -1, h = hit(b);
+      const sw = side * (0.25 + 0.95 * h); // + = toward her left
+      o.upperL = [-0.55, 0, 0.3 + Math.max(0, sw)];
+      o.upperR = [-0.55, 0, -0.3 + Math.min(0, sw)];
+      o.foreL = [-0.35, 0, 0];
+      o.foreR = [-0.35, 0, 0];
+      o.chestY = sw * 0.12;
+      o.chestZ = -sw * 0.05;
+      o.knee *= 1.25;
+    } else if (name === 'highVStep') {
+      // 2 — high V on beats 1 & 3, hands clasped overhead on 2 & 4, with a step-touch to the side
+      const k = Math.floor(b) % 4, h = hit(b);
+      const clasp = k % 2 ? h : 0, vee = k % 2 ? 0 : h;
+      o.upperL = [-0.2, 0, 0.4 + 2.0 * vee + 2.45 * clasp];
+      o.upperR = [-0.2, 0, -0.4 - 2.0 * vee - 2.45 * clasp];
+      o.foreL = [-0.15 - 0.1 * clasp, 0, 0.35 * clasp];
+      o.foreR = [-0.15 - 0.1 * clasp, 0, -0.35 * clasp];
+      const s2 = Math.sin((Math.PI * b) / 2);
+      o.stepX = s2 * 0.08;
+      o.legL = Math.max(0, -Math.cos(Math.PI * b * 0.5)) * 0.4 * (s2 > 0 ? 0 : 1);
+      o.legR = Math.max(0, Math.cos(Math.PI * b * 0.5)) * 0.4 * (s2 > 0 ? 1 : 0);
+    } else if (name === 'ripple') {
+      // 3 — the ripple: arms rise in a wave as the quarter turn passes through her (DanceRig.apply
+      // turns her, delayed by her place in the formation)
+      const r = this.rippleK ?? 0;
+      o.upperL = [-0.3, 0, 0.35 + 2.1 * r];
+      o.upperR = [-0.3, 0, -0.35 - 2.1 * r];
+      o.foreL = [-0.4 * (1 - r), 0, 0];
+      o.foreR = [-0.4 * (1 - r), 0, 0];
+      o.chestZ = 0;
+    } else if (name === 'clapKnee') {
+      // 4 — claps in front of the chest on every beat, a knee popping in on the off-beat,
+      // shoulders bouncing
+      const c = Math.pow(0.5 + 0.5 * Math.cos(Math.PI * 2 * (b % 1)), 5);
+      o.upperL = [-0.9, 0, 0.08 - 0.3 * c];
+      o.upperR = [-0.9, 0, -0.08 + 0.3 * c];
+      o.foreL = [-1.0, -0.45 * c, 0];
+      o.foreR = [-1.0, 0.45 * c, 0];
+      const pop = Math.pow(Math.max(0, Math.sin(Math.PI * 2 * (b % 1) + Math.PI)), 2);
+      if (Math.floor(b) % 2) o.legL = pop * 0.25;
+      else o.legR = pop * 0.25;
+      o.chestZ = (Math.floor(b) % 2 ? 1 : -1) * 0.05 * pop;
+    } else if (name === 'diagSweep') {
+      // 5 — a diagonal sweep: both arms from low on one side up to high on the other over two
+      // beats, the hips pivoting with it (footwork that opens the formation)
+      const ph = (b % 4) / 4, up = Math.sin(Math.PI * Math.min(1, ph * 2));
+      const side = ph < 0.5 ? 1 : -1;
+      const z = side * (-0.6 + 2.2 * up);
+      o.upperL = [-0.35, 0, Math.max(0.25, z)];
+      o.upperR = [-0.35, 0, Math.min(-0.25, z)];
+      o.foreL = [-0.2, 0, 0];
+      o.foreR = [-0.2, 0, 0];
+      o.pivot = side * 0.45 * up;
+    } else if (name === 'finale') {
+      // 6 — the finale cheer: a sharp high V hit on the first beat and HELD, one foot pointed out
+      const h = hit(Math.min(b % 8, 0.99));
+      o.upperL = [-0.1, 0, 0.35 + 2.2 * h];
+      o.upperR = [-0.1, 0, -0.35 - 2.2 * h];
+      o.foreL = [-0.05, 0, 0];
+      o.foreR = [-0.05, 0, 0];
+      o.legR = 0.18 * h;
+      o.kneeStraight = 1;
+      o.knee *= 0.3;
+      o.hipsZ = 0;
+      o.chestY = 0;
     } else if (name === 'cheerV') {
       // a sharp high V: both arms flung up and out on every other beat, punched down to the hips between
       const up = Math.floor(b) % 2 === 0 ? hit(b) : 1 - hit(b);
@@ -714,7 +792,12 @@ export class DanceRig {
     const e = this.energy;
     // spin: one full turn over the spin bar's middle four beats
     const inBar = b % 8;
-    const spin = cur === 'spin' ? smooth(2, 6, inBar) * Math.PI * 2 : 0;
+    // the ripple: a quarter turn and back, passing through the formation (each dancer's delay)
+    if (cur === 'ripple') {
+      const lb = inBar - (this.ripple ?? 0);
+      this.rippleK = Math.max(0, Math.sin(Math.PI * Math.min(1, Math.max(0, lb / 4))));
+    } else this.rippleK = 0;
+    const spin = cur === 'spin' ? smooth(2, 6, inBar) * Math.PI * 2 : cur === 'ripple' ? this.rippleK * Math.PI * 0.5 : 0;
 
     // walking to her spot (a simple gait), dancing fades out while she walks
     const walk = Math.min(1, speed / 1.1);
@@ -730,7 +813,7 @@ export class DanceRig {
       _e.set(x, y, z, 'XYZ');
       bone.quaternion.multiply(_q.setFromEuler(_e));
     };
-    rot(bn.hips, 0, spin * d, o.hipsZ * d);
+    rot(bn.hips, 0, (spin + (o.pivot ?? 0)) * d, o.hipsZ * d);
     rot(bn.spine, 0.04 * walk, o.chestY * d * 0.5, -o.hipsZ * d * 0.5);
     rot(bn.chest, 0, o.chestY * d * 0.5 - wl * 0.08 * walk, o.chestZ * d);
     rot(bn.head, o.headX * d, 0, -o.chestZ * d * 0.5);

@@ -2,7 +2,7 @@ import { DoubleSide, InstancedBufferAttribute, InstancedBufferGeometry, Mesh, No
 import { parkUniforms } from '../core/uniforms.js';
 import { mulberry32 } from '../utils/math.js';
 
-const COUNT = 2600;
+const COUNT = 7000; // instanced quads (one draw call): cheap even at this count
 
 /**
  * The YES climax: a swirling vortex of cherry blossom petals rising around the
@@ -22,13 +22,22 @@ export class PetalVortex {
     g.attributes.position = base.attributes.position;
     g.attributes.uv = base.attributes.uv;
     const rnd = mulberry32(509);
-    const a = new Float32Array(COUNT * 4), b = new Float32Array(COUNT * 4);
+    // three depth layers, so the whole air fills: near (round the couple), mid (the plaza and the
+    // dancers), far (the trees and the sky). Each petal: its orbit radius, its own ceiling, its size.
+    const a = new Float32Array(COUNT * 4), b = new Float32Array(COUNT * 4), c = new Float32Array(COUNT * 2);
     for (let i = 0; i < COUNT; i++) {
-      a.set([rnd() * Math.PI * 2, 0.6 + Math.pow(rnd(), 0.7) * 3.8, rnd(), 0.5 + rnd()], i * 4); // angle, radius, height phase, speed
-      b.set([rnd() * 100, rnd(), 0.022 + rnd() * 0.022, rnd()], i * 4); // seed, tint, size (≈ 4–9 cm petals), threshold (for amount)
+      const L = rnd();
+      const layer = L < 0.38 ? 0 : L < 0.74 ? 1 : 2;
+      const r = layer === 0 ? 0.6 + Math.pow(rnd(), 0.7) * 4.5 : layer === 1 ? 5 + rnd() * 11 : 16 + rnd() * 24;
+      const top = layer === 0 ? 7.5 : layer === 1 ? 15 : 28;
+      const size = layer === 0 ? 0.022 + rnd() * 0.022 : layer === 1 ? 0.03 + rnd() * 0.03 : 0.05 + rnd() * 0.05;
+      a.set([rnd() * Math.PI * 2, r, rnd(), 0.5 + rnd()], i * 4); // angle, radius, height phase, speed
+      b.set([rnd() * 100, rnd(), size, rnd()], i * 4); // seed, tint, size, threshold (shows once amount passes it)
+      c.set([top * (0.6 + 0.4 * rnd()), layer / 2], i * 2); // its ceiling (m), depth layer 0 / 0.5 / 1
     }
     g.setAttribute('aA', new InstancedBufferAttribute(a, 4));
     g.setAttribute('aB', new InstancedBufferAttribute(b, 4));
+    g.setAttribute('aC', new InstancedBufferAttribute(c, 2));
     g.instanceCount = COUNT;
     this.uniforms = {
       uTime: parkUniforms.uTime,
@@ -36,6 +45,7 @@ export class PetalVortex {
       uAmount: { value: 0 },
       uHeight: { value: 7.5 },
       uSpin: { value: 1 },
+      uFlash: { value: new Vector3() }, // the fireworks' light, caught by the petals
     };
     this.material = new ShaderMaterial({
       uniforms: this.uniforms,
@@ -47,8 +57,9 @@ export class PetalVortex {
         uniform float uTime, uAmount, uHeight, uSpin;
         uniform vec3 uCentre;
         attribute vec4 aA, aB;
+        attribute vec2 aC;
         varying vec2 vUv;
-        varying float vTint, vAlpha;
+        varying float vTint, vAlpha, vLayer;
         mat3 rot(vec3 ax, float a) {
           float s = sin(a), c = cos(a), o = 1.0 - c;
           return mat3(o*ax.x*ax.x + c, o*ax.x*ax.y + ax.z*s, o*ax.z*ax.x - ax.y*s,
@@ -58,16 +69,17 @@ export class PetalVortex {
         void main() {
           vUv = uv;
           vTint = aB.y;
+          vLayer = aC.y;
           float t = uTime;
-          // climb: wraps from the ground to uHeight
-          float h = fract(aA.z + t * 0.07 * aA.w);
-          float y = h * uHeight;
+          // climb: wraps from the ground to this petal's own ceiling (higher for the far layers)
+          float h = fract(aA.z + t * (0.07 - 0.035 * aC.y) * aA.w);
+          float y = h * aC.x * (uHeight / 7.5);
           // radius swells as it climbs, breathing a little
-          float r = aA.y * (0.55 + 0.75 * h) * (1.0 + 0.12 * sin(t * 0.9 + aB.x));
+          float r = aA.y * (0.7 + 0.5 * h) * (1.0 + 0.1 * sin(t * 0.9 + aB.x));
           // orbit: faster near the centre (a real vortex)
           float ang = aA.x + t * uSpin * (1.6 / (0.5 + r)) * aA.w;
           vec3 p = uCentre + vec3(cos(ang) * r, y + 0.1, sin(ang) * r);
-          p += vec3(sin(t * 2.1 + aB.x), sin(t * 1.7 + aB.x * 1.3) * 0.5, cos(t * 1.9 + aB.x)) * 0.18; // flutter
+          p += vec3(sin(t * 2.1 + aB.x), sin(t * 1.7 + aB.x * 1.3) * 0.5, cos(t * 1.9 + aB.x)) * (0.18 + 0.6 * aC.y); // flutter (wider drift far out)
           // a tumbling petal-shaped card
           vec3 ax = normalize(vec3(sin(aB.x), 0.6, cos(aB.x * 1.7)));
           vec3 local = rot(ax, t * (2.0 + aA.w * 3.0) + aB.x) * vec3(position.x * 1.0, position.y * 0.62, 0.0) * aB.z * 2.0;
@@ -76,8 +88,9 @@ export class PetalVortex {
           gl_Position = projectionMatrix * viewMatrix * vec4(p + local, 1.0);
         }`,
       fragmentShader: /* glsl */ `
+        uniform vec3 uFlash;
         varying vec2 vUv;
-        varying float vTint, vAlpha;
+        varying float vTint, vAlpha, vLayer;
         void main() {
           // a sakura petal: a rounded teardrop with the little notch at its tip
           vec2 q = vUv - 0.5;
@@ -88,6 +101,9 @@ export class PetalVortex {
           if (a < 0.02) discard;
           vec3 pink = mix(vec3(1.0, 0.36, 0.6), vec3(1.0, 0.62, 0.76), vTint);
           vec3 col = pink * (0.85 + 0.45 * smoothstep(0.3, 0.0, d)); // softly self-lit: a pink glow, not a white-out
+          col *= mix(1.0, 0.72, vLayer);                              // the far ones a little dimmer, in the night air
+          col += vec3(0.08, 0.1, 0.18) * vLayer;                      // …with a touch of moonlight
+          col += uFlash * (0.25 + 0.35 * vLayer);                     // and the colour of each firework burst
           gl_FragColor = vec4(col, a * 0.92);
         }`,
     });

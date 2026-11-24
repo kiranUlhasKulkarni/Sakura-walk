@@ -157,10 +157,13 @@ export const ActIII = {
       this.setReach(her, 'L', 0, null, 2);
       this.setReach(her, 'R', 0, null, 2);
     }
-    // he touches the scarf, a moment between them
-    if (cast.him.pose) this.setReach(cast.him, 'R', 0.8, () => neck().add(new Vector3(0, -0.12, 0)).addScaledVector(cast.him.root.getWorldDirection(v()), 0.12), 2.5);
-    await wait(ctx, 2.2);
-    if (cast.him.pose) this.setReach(cast.him, 'R', 0, null, 2);
+    // a moment between them: his arms stay relaxed at his sides; a slight, warm nod down to her
+    for (const s of ['L', 'R']) if (cast.him.pose) this.setReach(cast.him, s, 0, null, 3);
+    if (cast.him.pose) {
+      await ctx.clock.tween(0.8, (k) => (cast.him.pose.gazeUp = -0.16 * k));
+      await wait(ctx, 0.7);
+      await ctx.clock.tween(0.9, (k) => (cast.him.pose.gazeUp = -0.16 * (1 - k)));
+    } else await wait(ctx, 2.2);
     await wait(ctx, 2.0);
     letterbox(false);
     if (play) ctx.app.progress = { ...ctx.app.progress, dragon: true };

@@ -146,6 +146,26 @@ export class PoseRig {
       const hand = this.b[`hand${side}`];
       if (hold && hand) this.attached.push({ bone: hold, to: hand, offset: new Matrix4().copy(hand.matrixWorld).invert().multiply(hold.matrixWorld), restPos: hold.position.clone(), restQuat: hold.quaternion.clone() });
     }
+    // Her FACE rig (jaw, temples, brows, cheeks, lips, eyes…) was exported parented to the
+    // armature root, not the head: when the head turns or tilts, the skull and hair go with it but
+    // the face stays behind — the forehead bares, the features warp. Every such bone is re-attached
+    // to ride rigidly on the head bone, at its rest offset.
+    const head = this.b.head;
+    if (head) {
+      const FACE = /^(DEF-(jaw|temple|brow|cheek|lip|nose|eye|lid|forehead|ear|tongue|teeth|tooth|chin|mouth)|eye|ORG-face|MCH-eye)/i;
+      model.traverse((o) => {
+        if (!o.isBone || o === head || !FACE.test(o.name)) return;
+        // only the ones NOT already under the head (a properly parented face needs nothing)
+        let p = o.parent, underHead = false;
+        while (p) {
+          if (p === head) underHead = true;
+          if (!p.isBone || FACE.test(p.name)) break;
+          p = p.parent;
+        }
+        if (underHead || (o.parent?.isBone && FACE.test(o.parent.name))) return; // chains follow their face parent
+        this.attached.push({ bone: o, to: head, offset: new Matrix4().copy(head.matrixWorld).invert().multiply(o.matrixWorld), restPos: o.position.clone(), restQuat: o.quaternion.clone() });
+      });
+    }
   }
 
   /** Call BEFORE the mixer updates. */
@@ -388,6 +408,7 @@ export class PoseRig {
 
   /** Arms reaching toward world targets (on top of whatever the body is doing). */
   applyReach() {
+    const b = this.b;
     for (const s of ['L', 'R']) {
       const R = this.reach[s];
       // seated and the act isn't using this arm: rest the hand on the thigh
@@ -402,19 +423,39 @@ export class PoseRig {
       if (R.w <= 0.001) continue;
       const ua = this.b[`upperArm${s}`], fa = this.b[`forearm${s}`], hand = this.b[`hand${s}`];
       if (!ua || !fa || !hand) continue;
-      ua.getWorldPosition(_a);
-      const dir = R.target.clone().sub(_a);
-      const dist = dir.length();
-      dir.normalize();
-      // a slightly bent arm: the upper arm aims a touch below the line, the forearm straight at it
-      const upperDir = dir.clone().add(new Vector3(0, -0.18 * Math.min(1, 0.8 / Math.max(dist, 0.3)), 0)).normalize();
-      aim(ua, fa, upperDir, R.w);
-      fa.getWorldPosition(_a);
-      aim(fa, hand, R.target.clone().sub(_a).normalize(), R.w);
+      // two-bone IK with safe limits: the reach is clamped so the arm is never locked straight
+      // (no punching, no hyper-extension) nor folded through itself, and the elbow bends down
+      // and out to the side, the way a relaxed arm does
+      const S = ua.getWorldPosition(new Vector3()), El = fa.getWorldPosition(new Vector3()), H = hand.getWorldPosition(new Vector3());
+      const l1 = S.distanceTo(El), l2 = El.distanceTo(H), L = l1 + l2;
+      const toT = R.target.clone().sub(S);
+      const dc = Math.min(Math.max(toT.length(), 0.35 * L), 0.9 * L); // ≤ 90 %: a soft elbow, always
+      const dir = toT.lengthSq() > 1e-8 ? toT.normalize() : new Vector3(0, -1, 0);
+      const Tc = S.clone().addScaledVector(dir, dc);
+      const along = (l1 * l1 - l2 * l2 + dc * dc) / (2 * dc);
+      const h = Math.sqrt(Math.max(0, l1 * l1 - along * along));
+      const chestP = (b.chest ?? b.spine ?? this.root).getWorldPosition(new Vector3());
+      const out = S.clone().sub(chestP).setY(0);
+      if (out.lengthSq() < 1e-8) out.set(s === 'L' ? 1 : -1, 0, 0);
+      out.normalize();
+      const pole = new Vector3(0, -1, 0).addScaledVector(out, 0.65);
+      pole.addScaledVector(dir, -pole.dot(dir));
+      if (pole.lengthSq() < 1e-6) pole.copy(out).addScaledVector(dir, -out.dot(dir));
+      pole.normalize();
+      const E = S.clone().addScaledVector(dir, along).addScaledVector(pole, h);
+      aim(ua, fa, E.sub(S).normalize(), R.w);
+      const El2 = fa.getWorldPosition(new Vector3());
+      aim(fa, hand, Tc.sub(El2).normalize(), R.w);
       const mid = this.fingers[s].middle[0];
       if (mid) {
-        hand.getWorldPosition(_a);
-        aim(hand, mid, R.target.clone().sub(_a).normalize().add(new Vector3(0, 0.25, 0)).normalize(), R.w * 0.7);
+        // the hand: along an act's chosen direction (folded arms: lying along the other forearm),
+        // else continuing the reach, a little lifted
+        const hd = R.handDirFn?.();
+        if (hd) aim(hand, mid, hd, R.w * 0.85);
+        else {
+          hand.getWorldPosition(_a);
+          aim(hand, mid, R.target.clone().sub(_a).normalize().add(new Vector3(0, 0.25, 0)).normalize(), R.w * 0.7);
+        }
       }
     }
   }
