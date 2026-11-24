@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#140a18" />
+    <title>Sakura Park</title>
+    <meta name="description" content="A quiet evening walk under the cherry blossoms." />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Sakura Park" />
+    <meta property="og:description" content="A quiet evening walk under the cherry blossoms." />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Sakura Park" />
+    <meta name="twitter:description" content="A quiet evening walk under the cherry blossoms." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><g fill='%23ffb7c9' transform='translate(16 16)'><ellipse ry='7' rx='4' cy='-7'/><ellipse ry='7' rx='4' cy='-7' transform='rotate(72)'/><ellipse ry='7' rx='4' cy='-7' transform='rotate(144)'/><ellipse ry='7' rx='4' cy='-7' transform='rotate(216)'/><ellipse ry='7' rx='4' cy='-7' transform='rotate(288)'/></g><circle cx='16' cy='16' r='2.5' fill='%23c2185b'/></svg>"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Shippori+Mincho+B1:wght@500;800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <!-- Gate: loading bar, then the first click (which also unlocks audio) -->
+    <div id="gate" class="gate">
+      <div class="gate__inner">
+        <p class="gate__kanji">桜</p>
+        <h1 class="gate__title">Cherry Blossom</h1>
+        <p class="gate__sub">an evening in the park</p>
+        <div class="gate__bar"><span id="gate-bar"></span></div>
+        <p id="gate-prompt" class="gate__prompt">Gathering petals…</p>
+        <div class="gate__modes" role="group" aria-label="Choose how to experience it">
+          <button type="button" class="gate__mode" data-mode="cinematic">
+            <span class="gate__mode-title">Watch the story</span>
+            <span class="gate__mode-sub">Cinematic · sit back, it plays itself</span>
+          </button>
+          <button type="button" class="gate__mode" data-mode="interactive">
+            <span class="gate__mode-title">Walk it yourself</span>
+            <span class="gate__mode-sub">Interactive · WASD &amp; mouse, play catch</span>
+          </button>
+        </div>
+        <p class="gate__note">Sound on</p>
+      </div>
+    </div>
+
+    <!-- Story UI layer (letterbox, captions, the question) -->
+    <div id="letterbox" class="letterbox" aria-hidden="true"><i></i><i></i></div>
+    <div id="ui"></div>
+
+    <!-- Controls hint for exploring (fades after a few seconds) -->
+    <div id="hint" class="hint" aria-hidden="true">
+      <span><b>W A S D</b> walk</span><span><b>Shift</b> brisk</span><span><b>Mouse</b> look</span><span><b>Wheel</b> zoom</span><span><b>Esc</b> free cursor</span>
+    </div>
+
+    <!-- Interactive mode: station prompts ("E — play catch") -->
+    <div id="prompt" class="prompt" role="status"></div>
+
+    <!-- Mode switch (cinematic ⇄ interactive), auto-hides with the cursor -->
+    <button id="mode" class="mode-pill" type="button" aria-label="Switch mode"></button>
+
+    <button id="mute" class="mute" type="button" aria-label="Mute music" aria-pressed="false">
+      <span></span><span></span><span></span><span></span>
+    </button>
+
+    <!-- Hidden YouTube players (audio only; kept rendered but invisible) -->
+    <div id="yt-audio-host" aria-hidden="true"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
