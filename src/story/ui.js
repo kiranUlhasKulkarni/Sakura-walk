@@ -68,15 +68,26 @@ export function ask(question, { noScale = 1, onAnswer = null } = {}) {
   });
 }
 
-/** THE END: title, a line, and two choices. */
-export function theEnd({ onReplay, onWander } = {}) {
+/**
+ * THE END: title, a line, and the choices — watch it all again from the start, pick a chapter to
+ * rewatch (a list that opens in place), or wander the park.
+ */
+export function theEnd({ onReplay, onWander, chapters = [], onChapter } = {}) {
   const ui = document.getElementById('ui');
   const el = document.createElement('div');
   el.className = 'the-end';
-  el.innerHTML = `<p class="the-end__kanji">完</p><h2 class="the-end__title">The End</h2><p class="the-end__sub">he said yes</p><div class="the-end__row"><button type="button" data-a="replay">Watch again</button><button type="button" data-a="wander">Wander the park</button></div>`;
+  const list = chapters.map((c, i) => `<button type="button" class="the-end__chapter" data-ch="${c.id}"><span class="the-end__ch-n">${i + 1}</span><span class="the-end__ch-t">${c.title}</span><span class="the-end__ch-s">${c.sub ?? ''}</span></button>`).join('');
+  el.innerHTML = `<p class="the-end__kanji">完</p><h2 class="the-end__title">The End</h2><p class="the-end__sub">he said yes</p>
+    <div class="the-end__row"><button type="button" data-a="replay">Watch again from the start</button>${chapters.length ? '<button type="button" data-a="chapters">Pick a chapter</button>' : ''}<button type="button" data-a="wander">Wander the park</button></div>
+    <div class="the-end__chapters" hidden>${list}</div>`;
   ui?.appendChild(el);
   requestAnimationFrame(() => el.classList.add('the-end--on'));
   el.querySelector('[data-a="replay"]').addEventListener('click', () => onReplay?.());
+  el.querySelector('[data-a="chapters"]')?.addEventListener('click', () => {
+    const box = el.querySelector('.the-end__chapters');
+    box.hidden = !box.hidden;
+  });
+  for (const b of el.querySelectorAll('[data-ch]')) b.addEventListener('click', () => onChapter?.(b.dataset.ch));
   el.querySelector('[data-a="wander"]').addEventListener('click', () => {
     el.classList.remove('the-end--on');
     setTimeout(() => el.remove(), 1500);

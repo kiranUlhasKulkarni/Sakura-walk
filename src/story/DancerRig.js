@@ -106,6 +106,97 @@ function hsv(r, g, b) {
   return [h, mx ? d / mx : 0, mx];
 }
 
+/**
+ * The "marionette strings" fix. The scan's surface has places where a limb's skin is stitched to
+ * another part (a hand resting on the hip, the inner thighs, fingers to the leg…): triangles that
+ * span two parts that move apart. At rest they're invisible; as soon as an arm lifts or a leg kicks
+ * they stretch into long thin streaks. So before any dancer exists, the skin is put through a set
+ * of the hardest poses the choreography uses — arms high, punches, claps across the body, kicks,
+ * splits, twists — skinned on the CPU, and every triangle whose edges stretch to more than twice
+ * their rest length (and a visible size) in any of them is removed.
+ */
+const STRESS = [
+  { upperArmL: [-0.2, 0, 2.6], upperArmR: [-0.2, 0, -2.6], forearmL: [-0.3, 0, 0], forearmR: [-0.3, 0, 0] }, // high V
+  { upperArmL: [-2.4, 0, 0.3], upperArmR: [-2.4, 0, -0.3], forearmL: [-1.4, 0, 0], forearmR: [-1.4, 0, 0] }, // punches up
+  { upperArmL: [-0.95, 0, -0.35], upperArmR: [-0.95, 0, 0.35], forearmL: [-1.0, -0.5, 0], forearmR: [-1.0, 0.5, 0] }, // clap across
+  { upperArmL: [0, 0, 1.6], upperArmR: [0, 0, -1.6], hips: [0, 0.9, 0], chest: [0, -0.4, 0] }, // T-arms, twist
+  // legs only as far as the routine takes them (step-touch lifts, knee pops, the bounce) — testing
+  // high kicks / splits would also tear genuine hip skin, which really does stretch that far
+  { thighL: [-0.45, 0, 0], shinL: [0.6, 0, 0], thighR: [0.1, 0, 0] },
+  { thighR: [-0.45, 0, 0], shinR: [0.6, 0, 0], thighL: [0.1, 0, 0] },
+  { thighL: [-1.2, 0, 0], thighR: [0.3, 0, 0] }, // (kicks: only the bridges between the legs can go)
+  { thighR: [-1.2, 0, 0], thighL: [0.3, 0, 0] },
+  { upperArmL: [0.6, 0, 0.4], upperArmR: [-0.6, 0, -0.4], thighL: [-0.3, 0, 0], shinL: [0.5, 0, 0] }, // arms swinging, leg lifted
+  // the routine's mid-height arms (hands at the chest, forward and down, out to the side): small
+  // moves away from the thigh are what pull the contact slivers into shards
+  { upperArmL: [-0.9, 0, 0.1], upperArmR: [-0.9, 0, -0.1], forearmL: [-1.0, 0, 0], forearmR: [-1.0, 0, 0] },
+  { upperArmL: [-0.5, 0, 0.25], upperArmR: [-0.5, 0, -0.25], forearmL: [-0.4, 0, 0], forearmR: [-0.4, 0, 0] },
+  { upperArmL: [0, 0, 0.55], upperArmR: [0, 0, -0.55] },
+  { upperArmL: [0.35, 0, 0.2], upperArmR: [0.35, 0, -0.2], forearmL: [-0.3, 0, 0], forearmR: [-0.3, 0, 0] },
+  { upperArmL: [0.1, 0, 0.75], upperArmR: [0.1, 0, -0.75], forearmL: [-1.9, 0.9, 0], forearmR: [-1.9, -0.9, 0] }, // hands on hips
+];
+
+/** Each vertex's part: 1 left arm, 2 right arm, 3 left leg, 4 right leg, 0 the body (torso, head, shoulders). */
+function partsOf(n, skinIndex, skinWeight) {
+  const PART = NAMES.map((nm) => (/^(upperArm|forearm|hand)L$/.test(nm) ? 1 : /^(upperArm|forearm|hand)R$/.test(nm) ? 2 : /^(thigh|shin|foot)L$/.test(nm) ? 3 : /^(thigh|shin|foot)R$/.test(nm) ? 4 : 0));
+  const part = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    let best = 0;
+    for (let s = 1; s < 4; s++) if (skinWeight[k * 4 + s] > skinWeight[k * 4 + best]) best = s;
+    part[k] = PART[skinIndex[k * 4 + best]];
+  }
+  return part;
+}
+
+/** Mark (in `bridge`) every triangle that joins two parts and stretches in one of the STRESS poses. */
+function findBridges(P, T, skinIndex, skinWeight, J, H, minY, part, bridge) {
+  const n = P.length / 3;
+  const restEdge = (a, b) => Math.hypot(P[a * 3] - P[b * 3], P[a * 3 + 1] - P[b * 3 + 1], P[a * 3 + 2] - P[b * 3 + 2]);
+  const M = NAMES.map(() => new Matrix4()), W = NAMES.map(() => new Matrix4()), inv = NAMES.map((nm) => new Matrix4().makeTranslation(-J[nm].x, -J[nm].y, -J[nm].z));
+  const e = new Euler(), q = new Quaternion(), loc = new Matrix4(), pos = new Float32Array(n * 3), v = new Vector3(), acc = new Vector3();
+  const minLen = 0.012 * H; // ~2 cm: even short shards show up close
+  for (const pose of STRESS) {
+    // bone world matrices for this pose (rest rotations are identity: local axes = model axes)
+    NAMES.forEach((nm, i) => {
+      const parent = CHAIN[nm];
+      const off = parent ? J[nm].clone().sub(J[parent]) : J[nm].clone();
+      const r = pose[nm] ?? [0, 0, 0];
+      loc.compose(off, q.setFromEuler(e.set(r[0], r[1], r[2], 'XYZ')), new Vector3(1, 1, 1));
+      W[i].copy(parent ? W[IDX[parent]] : new Matrix4()).multiply(loc);
+      M[i].copy(W[i]).multiply(inv[i]);
+    });
+    for (let k = 0; k < n; k++) {
+      acc.set(0, 0, 0);
+      for (let s = 0; s < 4; s++) {
+        const w = skinWeight[k * 4 + s];
+        if (w <= 0) continue;
+        v.set(P[k * 3], P[k * 3 + 1], P[k * 3 + 2]).applyMatrix4(M[skinIndex[k * 4 + s]]);
+        acc.addScaledVector(v, w);
+      }
+      pos[k * 3] = acc.x;
+      pos[k * 3 + 1] = acc.y;
+      pos[k * 3 + 2] = acc.z;
+    }
+    const posed = (a, b) => Math.hypot(pos[a * 3] - pos[b * 3], pos[a * 3 + 1] - pos[b * 3 + 1], pos[a * 3 + 2] - pos[b * 3 + 2]);
+    for (let t = 0; t < T.length; t += 3) {
+      if (bridge[t / 3]) continue;
+      // only a BRIDGE between two different parts, low on the body (a hand fused to the hip, the
+      // inner thighs) — never skin that genuinely stretches, like the armpit or the hip crease
+      const pa = part[T[t]], pb = part[T[t + 1]], pc = part[T[t + 2]];
+      if (pa === pb && pb === pc) continue;
+      const fLow = (Math.min(P[T[t] * 3 + 1], P[T[t + 1] * 3 + 1], P[T[t + 2] * 3 + 1]) - minY) / H;
+      if (fLow > 0.62) continue;
+      for (const [a, b] of [[T[t], T[t + 1]], [T[t + 1], T[t + 2]], [T[t + 2], T[t]]]) {
+        const l1 = posed(a, b);
+        if (l1 > minLen && l1 > 1.8 * Math.max(restEdge(a, b), 1e-4)) {
+          bridge[t / 3] = 1;
+          break;
+        }
+      }
+    }
+  }
+}
+
 const templates = new WeakMap();
 
 /** Build (once per source scene) the merged, auto-skinned dancer template. */
@@ -346,6 +437,8 @@ export function dancerTemplate(sourceScene) {
   const skinIndex = new Uint16Array(n * 4), skinWeight = new Float32Array(n * 4);
   const region = new Uint8Array(n);
   const armW = new Float32Array(n);
+  const stray = new Uint8Array(n); // bits of the hands' inner faces left glued to the hips
+  const contact = new Uint8Array(n); // the hips under her hands: the scan baked dark hand-shadows there
   const wv = new Float32Array(NAMES.length);
   const add = (name, w) => (wv[IDX[name]] += w);
   // piecewise blend along a chain of [boneName, startF] (heights ascending)
@@ -414,6 +507,13 @@ export function dancerTemplate(sourceScene) {
     else if (f > 0.085) r = REGION.pants;
     else r = REGION.shoes;
     region[i] = r;
+    // skin-coloured surface at hand height, out at the hips but NOT on the arm: the inside of a hand
+    // that was fused to the hip in the scan — it would stay behind as flecks when the hand moves
+    if (!onArm && skinLike && f > 0.36 && f < 0.6 && Math.abs(X(i) - cx) > 0.1) stray[i] = 1;
+    if (!onArm && f > 0.33 && f < 0.63 && Math.abs(X(i) - cx) > 0.07) {
+      contact[i] = 1;
+      if (region[i] === REGION.keep || region[i] === REGION.skin) region[i] = f > 0.6 ? REGION.top : REGION.pants; // dark / skin flecks on the hip → trouser cloth
+    }
   }
 
   // per-region mean luminance (so recolouring keeps the painted shading)
@@ -425,21 +525,61 @@ export function dancerTemplate(sourceScene) {
   }
   for (let r = 0; r < 6; r++) mean[r] = cnt[r] ? mean[r] / cnt[r] : 1;
 
-  // triangles bridging an arm and the body (where a hand was fused to the hip) would stretch
-  // into a sheet as soon as the arm moves: drop them (hidden contact faces in the rest pose)
-  const T2 = [];
+  // ── the "marionette strings" ──
+  // Where a hand was fused to the hip (or the thighs to each other) in the scan, triangles bridge
+  // two parts; they are ALSO that patch of hip skin. Deleting them leaves see-through holes; keeping
+  // them stretches them into strings as the hand moves. So each bridge is DETACHED: it stays on the
+  // body (its limb-side corners get duplicated with the body corner's skinning and cloth colour), while
+  // the hand keeps its own copy of those vertices and moves away clean.
+  const part = partsOf(n, skinIndex, skinWeight);
+  const bridge = new Uint8Array(T.length / 3);
   for (let t = 0; t < T.length; t += 3) {
     const a = armW[T[t]], b = armW[T[t + 1]], c = armW[T[t + 2]];
-    if (Math.max(a, b, c) - Math.min(a, b, c) < 0.4) T2.push(T[t], T[t + 1], T[t + 2]);
+    if (Math.max(a, b, c) - Math.min(a, b, c) >= 0.4 && (Math.min(P[T[t] * 3 + 1], P[T[t + 1] * 3 + 1], P[T[t + 2] * 3 + 1]) - minY) / H < 0.66) bridge[t / 3] = 1;
+  }
+  if (!/[?&]nocull\b/.test(location.search)) findBridges(P, T, skinIndex, skinWeight, J, H, minY, part, bridge);
+  const SI = Array.from(skinIndex), SW = Array.from(skinWeight), REG = Array.from(region), CON = Array.from(contact);
+  const T3 = T.slice();
+  const dup = new Map();
+  let detached = 0;
+  for (let t = 0; t < T.length; t += 3) {
+    if (!bridge[t / 3]) continue;
+    const vs = [T[t], T[t + 1], T[t + 2]];
+    // the anchor: a corner on the body if there is one, else the part two corners share
+    let anchor = vs.find((x) => part[x] === 0);
+    if (anchor === undefined) anchor = part[vs[0]] === part[vs[1]] || part[vs[0]] === part[vs[2]] ? vs[0] : vs[1];
+    for (let j = 0; j < 3; j++) {
+      const x = vs[j];
+      if (part[x] === part[anchor]) continue;
+      const key = x * 65536 + anchor;
+      let d = dup.get(key);
+      if (d === undefined) {
+        d = P.length / 3;
+        // halfway back toward the body corner: the patch lies flat on the hip instead of standing
+        // out where the hand's side was (still wide enough to close the gap the hand leaves)
+        P.push((P[x * 3] + P[anchor * 3]) / 2, (P[x * 3 + 1] + P[anchor * 3 + 1]) / 2, (P[x * 3 + 2] + P[anchor * 3 + 2]) / 2);
+        N.push(N[x * 3], N[x * 3 + 1], N[x * 3 + 2]);
+        C.push(C[anchor * 3], C[anchor * 3 + 1], C[anchor * 3 + 2]); // the hip's cloth, not the hand's skin
+        for (let s = 0; s < 4; s++) {
+          SI.push(SI[anchor * 4 + s]);
+          SW.push(SW[anchor * 4 + s]);
+        }
+        REG.push(REG[anchor]);
+        CON.push(1);
+        dup.set(key, d);
+        detached++;
+      }
+      T3[t + j] = d;
+    }
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(new Float32Array(P), 3));
   geometry.setAttribute('normal', new BufferAttribute(new Float32Array(N), 3));
-  geometry.setAttribute('skinIndex', new BufferAttribute(skinIndex, 4));
-  geometry.setAttribute('skinWeight', new BufferAttribute(skinWeight, 4));
-  geometry.setIndex(T2);
+  geometry.setAttribute('skinIndex', new BufferAttribute(new Uint16Array(SI), 4));
+  geometry.setAttribute('skinWeight', new BufferAttribute(new Float32Array(SW), 4));
+  geometry.setIndex(T3);
   geometry.computeBoundingSphere();
-  const tpl = { geometry, joints: J, colors: new Float32Array(C), region, mean, lum, minY, H };
+  const tpl = { geometry, joints: J, colors: new Float32Array(C), region: Uint8Array.from(REG), contact: Uint8Array.from(CON), mean, lum, minY, H, detached };
   templates.set(sourceScene, tpl);
   return tpl;
 }
@@ -522,7 +662,8 @@ export function rigDancer(actor, sourceScene, outfit) {
     } else if (r === REGION.keep) {
       for (let c = 0; c < 3; c++) col[i * 3 + c] = src[i * 3 + c];
     } else {
-      const shade = Math.min(1.6, Math.max(0.35, tpl.lum(i) / tpl.mean[r]));
+      // (where her hands lay on her hips the scan is shadowed: never darker than the plain cloth there)
+      const shade = Math.min(1.6, Math.max(tpl.contact[i] ? 0.92 : 0.35, tpl.lum(i) / tpl.mean[r]));
       col[i * 3] = pal[r].r * shade;
       col[i * 3 + 1] = pal[r].g * shade;
       col[i * 3 + 2] = pal[r].b * shade;
@@ -536,7 +677,10 @@ export function rigDancer(actor, sourceScene, outfit) {
   sharedMaterial ??= new MeshStandardMaterial({ name: 'dancer-cloth', vertexColors: true, roughness: 0.72, metalness: 0, side: DoubleSide });
   const mesh = new SkinnedMesh(g, sharedMaterial);
   mesh.name = 'dancer';
-  mesh.castShadow = mesh.receiveShadow = true;
+  mesh.castShadow = true;
+  // no received shadows: where her hand was fused to her hip in the scan there is no skin under it,
+  // and the inside of the body (self-shadowed, dark) would show through as cracks when the hand moves
+  mesh.receiveShadow = false;
   mesh.frustumCulled = false;
   model.add(bones.hips);
   model.add(mesh);

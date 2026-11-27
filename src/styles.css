@@ -136,3 +136,12 @@ body:has(.stick--on) .mode-pill { left: auto; right: calc(68px + env(safe-area-i
 
 /* ── a lost GPU context ── */
 .context-lost { position: fixed; inset: auto 50% 50% auto; transform: translate(50%, 50%); z-index: 30; padding: 14px 24px; border-radius: 999px; border: 1px solid rgba(255, 220, 235, 0.4); background: rgba(30, 10, 30, 0.8); color: #fff4f7; font: inherit; font-size: 16px; letter-spacing: 0.08em; cursor: pointer; }
+
+/* ── the end: chapter picker ── */
+.the-end__chapters { margin-top: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; width: min(720px, calc(100vw - 32px)); max-height: 46vh; overflow-y: auto; }
+.the-end__chapters[hidden] { display: none; }
+.the-end__chapter { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; text-align: left; padding: 10px 14px; border-radius: 12px; border: 1px solid rgba(255, 220, 235, 0.25); background: rgba(30, 10, 30, 0.55); color: #fff4f7; font: inherit; cursor: pointer; transition: background 0.25s ease; }
+.the-end__chapter:hover { background: rgba(110, 40, 80, 0.55); }
+.the-end__ch-n { grid-row: span 2; align-self: center; font-family: 'Shippori Mincho B1', serif; font-size: 20px; color: var(--blush); }
+.the-end__ch-t { font-size: 15px; letter-spacing: 0.04em; }
+.the-end__ch-s { font-size: 12px; font-style: italic; opacity: 0.7; }

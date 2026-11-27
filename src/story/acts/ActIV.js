@@ -88,79 +88,98 @@ export const ActIV = {
     setTimeout(() => actCard('IV', 'Hanabi', 5.5), 500);
     ctx.clock.tween(1.4, (k) => (post.u.uFade.value = 1 - k));
 
-    // ── the last stretch into the plaza ──
-    await ctl.walkPath([lanePoint(0.997), C.clone().addScaledVector(SKY, -1.4), markHim], 1.25);
-    for (const f of app.followers) f.paused = true;
-    await Promise.all([
-      movers.walkTo(cast.him, markHim, { speed: 0.6, face: markHim.clone().addScaledVector(SKY, 5) }),
-      cast.her ? movers.walkTo(cast.her, markHer, { speed: 0.9, face: markHer.clone().addScaledVector(SKY, 5) }) : null,
-      cast.catHim ? movers.walkTo(cast.catHim, markHim.clone().addScaledVector(RIGHT, -0.7).addScaledVector(SKY, -0.4), { speed: 1, face: C.clone().addScaledVector(SKY, 6) }) : null,
-      cast.catHer ? movers.walkTo(cast.catHer, markHer.clone().addScaledVector(RIGHT, 0.75).addScaledVector(SKY, -0.3), { speed: 1, face: C.clone().addScaledVector(SKY, 6) }) : null,
-    ]);
-    for (const d of cast.dancers) movers.turnTo(d, skyHeading, { rate: 2 });
-
-    // ── nightfall ──
-    this.mode = 'show';
-    this.shot = 'nightfall';
-    ctx.clock.tween(2.5, (k) => {
-      for (const a of [cast.him, cast.her]) if (a?.pose) a.pose.gazeUp = 0.42 * k;
-    });
-    await wait(ctx, 0.8);
-    app.nightfall(1.6); // + "Marry You"
-    await wait(ctx, 2.4);
-
-    // ── the opening salvo ──
     const S = (along, across, up) => fw.skyPoint(along, across, up);
-    fw.salvo([
-      { type: 'chrysanthemum', pos: S(110, 0, 55), colorA: 'gold', pistil: 'sakura', scale: 1.3, flight: 2.4 },
-      { type: 'peony', pos: S(120, -48, 48), colorA: 'sakura', delay: 1.4 },
-      { type: 'ring', pos: S(125, 50, 58), colorA: 'violet', pistil: 'gold', delay: 1.6 },
-      { type: 'willow', pos: S(140, 8, 70), scale: 1.2, delay: 2.6 },
-      { type: 'heart', pos: S(108, -22, 44), colorA: 'pink', colorB: 'rose', delay: 3.4 },
-      { type: 'glitter', pos: S(130, 62, 50), colorA: 'silver', delay: 3.8 },
-      { type: 'palm', pos: S(115, -62, 52), colorA: 'sakura', delay: 4.6 },
-      { type: 'chrysanthemum', pos: S(135, 35, 62), colorA: 'electric', pistil: 'white', delay: 5.0 },
-      { type: 'peony', pos: S(118, -30, 60), colorA: 'magenta', delay: 6.0 },
-      { type: 'peony', pos: S(122, 22, 56), colorA: 'sakura', colorB: 'white', delay: 6.3 },
-      { type: 'ring', pos: S(128, -5, 66), colorA: 'gold', pistil: 'violet', delay: 6.6 },
-      { type: 'kamuro', pos: S(150, 0, 74), colorA: 'white', scale: 1.3, delay: 7.5 },
-    ]);
-    this.shot = 'sky';
-    await wait(ctx, 4.2);
-    this.shot = 'faces';
-    await wait(ctx, 4.6);
-    this.shot = 'wide';
-    await wait(ctx, 3.4);
-
-    // ── MARRY ME ──
-    this.shot = 'text';
-    this.textCenter = S(106, -3, 31);
-    const formed = fw.writeText('MARRY ME', { center: this.textCenter, height: 8.5, stagger: 0.2, flight: 2.3, hold: 7.5, colorA: 'gold', colorB: 'sakura' });
-    await wait(ctx, formed + 1.4);
-    // HER message to him: he turns to her, one hand opening toward her; she turns to him, smiling
-    this.shot = 'reaction';
     const her = cast.her;
-    ctx.clock.tween(1.2, (k) => {
-      for (const a of [cast.him, her]) if (a?.pose) a.pose.gazeUp = 0.42 * (1 - k);
-    });
-    if (her) movers.turnTo(her, cast.him.root.position, { rate: 1.8 });
-    movers.turnTo(cast.him, her ? her.root.position : C, { rate: 2.2 });
-    // (no hand jammed to his chest: one hand opens gently toward her, a soft elbow)
-    if (cast.him.pose) this.setReach(cast.him, 'R', 0.7, () => {
-      const f = cast.him.root.getWorldDirection(v()).setY(0).normalize();
-      return cast.him.root.position.clone().addScaledVector(f, 0.34).addScaledVector(new Vector3().crossVectors(f, UP), 0.14).setY(cast.him.root.position.y + 0.98);
-    }, 1.6);
-    await wait(ctx, 3.2);
-    if (cast.him.pose) this.setReach(cast.him, 'R', 0, null, 2);
-    this.shot = 'text-wide';
-    await wait(ctx, 1.6);
-    // a golden curtain to close the first half
-    fw.salvo([
-      { type: 'kamuro', pos: S(125, -40, 66), colorA: 'gold', scale: 1.2 },
-      { type: 'kamuro', pos: S(132, 40, 68), colorA: 'gold', scale: 1.2, delay: 0.25 },
-      { type: 'willow', pos: S(118, 0, 62), scale: 1.25, delay: 0.5 },
-    ]);
-    await wait(ctx, 2.6);
+    const jump = ctx.jump;
+    ctx.jump = null;
+    if (jump === 'dance') {
+      // straight to the dance (the chapter picker / ?chapter=dance): night has fallen, they stand
+      // in the plaza, "Marry You" is playing and the sky is already blooming
+      place(cast.him, markHim, skyHeading);
+      place(cast.her, markHer, skyHeading);
+      place(cast.catHim, markHim.clone().addScaledVector(RIGHT, -0.7).addScaledVector(SKY, -0.4), skyHeading);
+      place(cast.catHer, markHer.clone().addScaledVector(RIGHT, 0.75).addScaledVector(SKY, -0.3), skyHeading);
+      ctl.pos.copy(markHim);
+      for (const f of app.followers) f.paused = true;
+      app.setNight(1);
+      app.music.toPhase2();
+      fw.auto(0.8);
+      this.mode = 'show';
+      this.shot = 'wide';
+      await wait(ctx, 1.6);
+    } else {
+      // ── the last stretch into the plaza ──
+      await ctl.walkPath([lanePoint(0.997), C.clone().addScaledVector(SKY, -1.4), markHim], 1.25);
+      for (const f of app.followers) f.paused = true;
+      await Promise.all([
+        movers.walkTo(cast.him, markHim, { speed: 0.6, face: markHim.clone().addScaledVector(SKY, 5) }),
+        cast.her ? movers.walkTo(cast.her, markHer, { speed: 0.9, face: markHer.clone().addScaledVector(SKY, 5) }) : null,
+        cast.catHim ? movers.walkTo(cast.catHim, markHim.clone().addScaledVector(RIGHT, -0.7).addScaledVector(SKY, -0.4), { speed: 1, face: C.clone().addScaledVector(SKY, 6) }) : null,
+        cast.catHer ? movers.walkTo(cast.catHer, markHer.clone().addScaledVector(RIGHT, 0.75).addScaledVector(SKY, -0.3), { speed: 1, face: C.clone().addScaledVector(SKY, 6) }) : null,
+      ]);
+      for (const d of cast.dancers) movers.turnTo(d, skyHeading, { rate: 2 });
+
+      // ── nightfall ──
+      this.mode = 'show';
+      this.shot = 'nightfall';
+      ctx.clock.tween(2.5, (k) => {
+        for (const a of [cast.him, cast.her]) if (a?.pose) a.pose.gazeUp = 0.42 * k;
+      });
+      await wait(ctx, 0.8);
+      app.nightfall(1.6); // + "Marry You"
+      await wait(ctx, 2.4);
+
+      // ── the opening salvo ──
+      fw.salvo([
+        { type: 'chrysanthemum', pos: S(110, 0, 55), colorA: 'gold', pistil: 'sakura', scale: 1.3, flight: 2.4 },
+        { type: 'peony', pos: S(120, -48, 48), colorA: 'sakura', delay: 1.4 },
+        { type: 'ring', pos: S(125, 50, 58), colorA: 'violet', pistil: 'gold', delay: 1.6 },
+        { type: 'willow', pos: S(140, 8, 70), scale: 1.2, delay: 2.6 },
+        { type: 'heart', pos: S(108, -22, 44), colorA: 'pink', colorB: 'rose', delay: 3.4 },
+        { type: 'glitter', pos: S(130, 62, 50), colorA: 'silver', delay: 3.8 },
+        { type: 'palm', pos: S(115, -62, 52), colorA: 'sakura', delay: 4.6 },
+        { type: 'chrysanthemum', pos: S(135, 35, 62), colorA: 'electric', pistil: 'white', delay: 5.0 },
+        { type: 'peony', pos: S(118, -30, 60), colorA: 'magenta', delay: 6.0 },
+        { type: 'peony', pos: S(122, 22, 56), colorA: 'sakura', colorB: 'white', delay: 6.3 },
+        { type: 'ring', pos: S(128, -5, 66), colorA: 'gold', pistil: 'violet', delay: 6.6 },
+        { type: 'kamuro', pos: S(150, 0, 74), colorA: 'white', scale: 1.3, delay: 7.5 },
+      ]);
+      this.shot = 'sky';
+      await wait(ctx, 4.2);
+      this.shot = 'faces';
+      await wait(ctx, 4.6);
+      this.shot = 'wide';
+      await wait(ctx, 3.4);
+
+      // ── MARRY ME ──
+      this.shot = 'text';
+      this.textCenter = S(106, -3, 31);
+      const formed = fw.writeText('MARRY ME', { center: this.textCenter, height: 8.5, stagger: 0.2, flight: 2.3, hold: 7.5, colorA: 'gold', colorB: 'sakura' });
+      await wait(ctx, formed + 1.4);
+      // HER message to him: he turns to her, one hand opening toward her; she turns to him, smiling
+      this.shot = 'reaction';
+      ctx.clock.tween(1.2, (k) => {
+        for (const a of [cast.him, her]) if (a?.pose) a.pose.gazeUp = 0.42 * (1 - k);
+      });
+      if (her) movers.turnTo(her, cast.him.root.position, { rate: 1.8 });
+      movers.turnTo(cast.him, her ? her.root.position : C, { rate: 2.2 });
+      // (no hand jammed to his chest: one hand opens gently toward her, a soft elbow)
+      if (cast.him.pose) this.setReach(cast.him, 'R', 0.7, () => {
+        const f = cast.him.root.getWorldDirection(v()).setY(0).normalize();
+        return cast.him.root.position.clone().addScaledVector(f, 0.34).addScaledVector(new Vector3().crossVectors(f, UP), 0.14).setY(cast.him.root.position.y + 0.98);
+      }, 1.6);
+      await wait(ctx, 3.2);
+      if (cast.him.pose) this.setReach(cast.him, 'R', 0, null, 2);
+      this.shot = 'text-wide';
+      await wait(ctx, 1.6);
+      // a golden curtain to close the first half
+      fw.salvo([
+        { type: 'kamuro', pos: S(125, -40, 66), colorA: 'gold', scale: 1.2 },
+        { type: 'kamuro', pos: S(132, 40, 68), colorA: 'gold', scale: 1.2, delay: 0.25 },
+        { type: 'willow', pos: S(118, 0, 62), scale: 1.25, delay: 0.5 },
+      ]);
+      await wait(ctx, 2.6);
+    }
 
     // ── Part 1: her show — a tightly synchronized cheer routine ──
     // he steps back to watch from the front; she takes the centre; the dancers rush into a V behind her

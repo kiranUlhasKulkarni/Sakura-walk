@@ -11,6 +11,7 @@ import { Explore } from './story/acts/Explore.js';
 import { FreeRoam } from './story/acts/FreeRoam.js';
 import { Prelude } from './story/acts/Prelude.js';
 import { laneU, STATIONS } from './world/lane.js';
+import { chapterById, CHAPTERS, prepareChapter } from './story/chapters.js';
 
 const params = new URLSearchParams(location.search);
 const DEBUG = params.has('debug');
@@ -64,10 +65,27 @@ function enter(mode = 'cinematic') {
   document.body.classList.add('entered');
   setTimeout(() => gate.remove(), 2200);
   app.timeline.ctx.interactive = mode === 'interactive';
+  // ?chapter=<id> (the end screen's chapter picker, or a direct link: ?chapter=dance goes straight
+  // to the group dance): prepare that chapter's world, then play it
+  if (chapter) {
+    prepareChapter(app, chapter);
+    setModeLabel();
+    app.timeline.goto(chapter.act);
+    return;
+  }
   setModeLabel();
   const jump = params.get('act'); // ?act=act1 jumps straight to an act
   if (mode === 'interactive') app.timeline.goto(jump || 'free');
   else app.timeline.start(jump || undefined);
+}
+// a chapter link: the gate offers just that chapter
+const chapter = chapterById(params.get('chapter'));
+if (chapter) {
+  const n = CHAPTERS.indexOf(chapter) + 1;
+  gate.querySelector('[data-mode="interactive"]')?.remove();
+  const b = gate.querySelector('[data-mode="cinematic"]');
+  b.querySelector('.gate__mode-title').textContent = `Chapter ${n} · ${chapter.title}`;
+  b.querySelector('.gate__mode-sub').textContent = `${chapter.sub} — tap to begin`;
 }
 for (const b of gate.querySelectorAll('[data-mode]')) b.addEventListener('click', () => enter(b.dataset.mode));
 addEventListener('keydown', (e) => {

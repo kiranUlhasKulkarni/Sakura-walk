@@ -70,8 +70,28 @@ export const ActI = {
       f.paused = false;
     }
     rig.cut(rig.pos.clone(), rig.look.clone()); // take the camera as the prelude left it; update() glides from here
-    await wait(ctx, 0.6);
-    await ctl.walkPath(pts, 1.3);
+    const jump = ctx.jump;
+    ctx.jump = null;
+    if (jump === 'catch') {
+      // straight to the catch (the chapter picker): they're already in the clearing
+      const put = (a, p, look) => {
+        if (!a) return;
+        a.root.position.copy(p);
+        a.root.rotation.y = Math.atan2(look.x - p.x, look.z - p.z);
+      };
+      put(cast.him, this.markHim, this.markHer);
+      put(cast.her, this.markHer.clone().addScaledVector(P, 0.8), this.markHim);
+      put(cast.catHim, this.markHim.clone().addScaledVector(P, 1.6), st.center);
+      put(cast.catHer, this.markHer.clone().addScaledVector(P, 1.8), st.center);
+      ctl.pos.copy(this.markHim);
+      for (const f of app.followers) f.reset();
+      this.odo = this.pathLen; // (the stroll's camera framings are skipped)
+      rig.cut(st.center.clone().addScaledVector(P, -6.6).setY(1.65), st.center.clone().setY(1.35));
+      await wait(ctx, 0.8);
+    } else {
+      await wait(ctx, 0.6);
+      await ctl.walkPath(pts, 1.3);
+    }
 
     // ── arrival: everyone to their marks (and they stay there) ──
     this.mode = 'arrive';

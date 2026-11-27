@@ -4,6 +4,7 @@ import { damp } from '../../utils/math.js';
 import { STATIONS } from '../../world/lane.js';
 import { walkHeight } from '../../world/terrain.js';
 import { Injuries, ringBox } from '../Proposal.js';
+import { CHAPTERS } from '../chapters.js';
 import { wait } from '../Timeline.js';
 import { actCard, ask, flashText, letterbox, theEnd } from '../ui.js';
 
@@ -353,7 +354,10 @@ export const ActV = {
     letterbox(false);
     ctx.app.music.duckTo(0.55);
     theEnd({
-      onReplay: () => location.reload(),
+      // a fresh page load, so every chapter starts from a clean world (see story/chapters.js)
+      onReplay: () => (location.href = location.pathname),
+      chapters: CHAPTERS,
+      onChapter: (id) => (location.href = `${location.pathname}?chapter=${id}`),
       onWander: () => {
         // back into the night park: the show carries on softly, the couple wander together
         ctx.clock.tween(2, (k) => (post.u.uFade.value = 1 - k));
