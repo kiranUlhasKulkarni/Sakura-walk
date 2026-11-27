@@ -18,7 +18,7 @@ const RIGHT = new Vector3(-SKY.z, 0, SKY.x); // the couple's right as they face 
  *             the lane into the lantern-ringed plaza and stop at its centre,
  *             facing the open sky over the mountain.
  *  Nightfall  The dusk drops to deep night in a breath; the lanterns flare;
- *             "River Flows in You" hands over to "Marry You".
+ *             Spring Snow hands over to "Marry You".
  *  Salvo      The show opens: chrysanthemums, peonies, rings, a heart, a
  *             willow and palm, a white kamuro — colour washing over their faces.
  *  MARRY ME   A hush; then a line of rockets climbs, and each bursts into a

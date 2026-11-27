@@ -95,7 +95,7 @@ class Channel {
 
 /**
  * Four-phase soundtrack (identical in the cinematic and interactive modes):
- *   startPhase1() — inside the "Begin" click (autoplay policy): "River Flows in You" fades in
+ *   startPhase1() — inside the "Begin" click (autoplay policy): Spring Snow fades in
  *                   and loops, however long the walk, the catch, the picnic or the scarf take.
  *                   The other players are primed in the same click, so they can start later
  *                   without a gesture.

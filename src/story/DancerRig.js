@@ -136,36 +136,96 @@ const STRESS = [
   { upperArmL: [0.1, 0, 0.75], upperArmR: [0.1, 0, -0.75], forearmL: [-1.9, 0.9, 0], forearmR: [-1.9, -0.9, 0] }, // hands on hips
 ];
 
-/** Each vertex's part: 1 left arm, 2 right arm, 3 left leg, 4 right leg, 0 the body (torso, head, shoulders). */
-function partsOf(n, skinIndex, skinWeight) {
+/** Each vertex's weight in each part: [body, left arm, right arm, left leg, right leg] (sums to 1). */
+function partWeights(n, skinIndex, skinWeight) {
   const PART = NAMES.map((nm) => (/^(upperArm|forearm|hand)L$/.test(nm) ? 1 : /^(upperArm|forearm|hand)R$/.test(nm) ? 2 : /^(thigh|shin|foot)L$/.test(nm) ? 3 : /^(thigh|shin|foot)R$/.test(nm) ? 4 : 0));
-  const part = new Uint8Array(n);
-  for (let k = 0; k < n; k++) {
-    let best = 0;
-    for (let s = 1; s < 4; s++) if (skinWeight[k * 4 + s] > skinWeight[k * 4 + best]) best = s;
-    part[k] = PART[skinIndex[k * 4 + best]];
-  }
-  return part;
+  const pw = new Float32Array(n * 5);
+  for (let k = 0; k < n; k++) for (let s = 0; s < 4; s++) pw[k * 5 + PART[skinIndex[k * 4 + s]]] += skinWeight[k * 4 + s];
+  return pw;
 }
 
-/** Mark (in `bridge`) every triangle that joins two parts and stretches in one of the STRESS poses. */
-function findBridges(P, T, skinIndex, skinWeight, J, H, minY, part, bridge) {
+/** Skin matrices (bone world × inverse rest) for one pose, from per-bone local Euler rotations. */
+function poseFromEuler(J, pose) {
+  const W = NAMES.map(() => new Matrix4()), e = new Euler(), q = new Quaternion(), loc = new Matrix4();
+  return NAMES.map((nm, i) => {
+    const parent = CHAIN[nm];
+    const off = parent ? J[nm].clone().sub(J[parent]) : J[nm].clone();
+    const r = pose[nm] ?? [0, 0, 0];
+    loc.compose(off, q.setFromEuler(e.set(r[0], r[1], r[2], 'XYZ')), new Vector3(1, 1, 1));
+    W[i].copy(parent ? W[IDX[parent]] : new Matrix4()).multiply(loc);
+    return W[i].clone().multiply(new Matrix4().makeTranslation(-J[nm].x, -J[nm].y, -J[nm].z));
+  });
+}
+
+/**
+ * Every pose the dancers ACTUALLY make: a throwaway DanceRig on throwaway bones runs every move of
+ * every routine (the cheer steps, freestyle, the extras) at sampled beats, plus walking — so the
+ * bridge test below is judged on the real choreography, not on guesses.
+ */
+function routinePoses(J, H) {
+  const bones = {};
+  const root = new Bone();
+  for (const nm of NAMES) bones[nm] = new Bone();
+  for (const nm of NAMES) {
+    const parent = CHAIN[nm];
+    bones[nm].position.copy(parent ? J[nm].clone().sub(J[parent]) : J[nm]);
+    (parent ? bones[parent] : root).add(bones[nm]);
+  }
+  const rig = new DanceRig(null, bones, { H });
+  rig.want = rig.energy = 1;
+  const inv = NAMES.map((nm) => new Matrix4().makeTranslation(-J[nm].x, -J[nm].y, -J[nm].z));
+  const capture = () => {
+    root.updateMatrixWorld(true);
+    return NAMES.map((nm, i) => bones[nm].matrixWorld.clone().multiply(inv[i]));
+  };
+  const out = [];
+  const moves = [...new Set([...CHEER, 'groove', 'pump', 'wave', 'clap', 'step', 'spin', 'punch', 'hips', 'cheerV', 'clapHigh', 'kick'])];
+  for (const mv of moves)
+    for (const b of [0.05, 0.12, 0.5, 1.08, 1.5, 2.1, 2.6, 3.05, 3.5, 4.4, 5.2, 6.6]) {
+      rig.restore();
+      rig.routine = [mv];
+      rig.offset = 0;
+      rig.ripple = 0;
+      rig.beat = b;
+      rig.apply(0, 0);
+      out.push(capture());
+    }
+  for (let k = 0; k < 8; k++) {
+    rig.restore();
+    rig.routine = ['groove'];
+    rig.walkPh = (k / 8) * Math.PI * 2;
+    rig.apply(0, 1.4);
+    out.push(capture());
+  }
+  return out;
+}
+
+/**
+ * Mark (in `bridge`) every triangle that joins differently-weighted parts of the body and stretches
+ * to more than 3× its rest size in any of `poses` — genuine skin (the armpit, the hip crease) never
+ * stretches that far; a bridge between a hand and a hip does by 15–100×.
+ */
+function findBridges(P, T, skinIndex, skinWeight, H, poses, bridge) {
   const n = P.length / 3;
+  const pw = partWeights(n, skinIndex, skinWeight);
+  const partDiff = (a, b) => {
+    let d = 0;
+    for (let j = 0; j < 5; j++) d += Math.abs(pw[a * 5 + j] - pw[b * 5 + j]);
+    return d / 2;
+  };
   const restEdge = (a, b) => Math.hypot(P[a * 3] - P[b * 3], P[a * 3 + 1] - P[b * 3 + 1], P[a * 3 + 2] - P[b * 3 + 2]);
-  const M = NAMES.map(() => new Matrix4()), W = NAMES.map(() => new Matrix4()), inv = NAMES.map((nm) => new Matrix4().makeTranslation(-J[nm].x, -J[nm].y, -J[nm].z));
-  const e = new Euler(), q = new Quaternion(), loc = new Matrix4(), pos = new Float32Array(n * 3), v = new Vector3(), acc = new Vector3();
-  const minLen = 0.012 * H; // ~2 cm: even short shards show up close
-  for (const pose of STRESS) {
-    // bone world matrices for this pose (rest rotations are identity: local axes = model axes)
-    NAMES.forEach((nm, i) => {
-      const parent = CHAIN[nm];
-      const off = parent ? J[nm].clone().sub(J[parent]) : J[nm].clone();
-      const r = pose[nm] ?? [0, 0, 0];
-      loc.compose(off, q.setFromEuler(e.set(r[0], r[1], r[2], 'XYZ')), new Vector3(1, 1, 1));
-      W[i].copy(parent ? W[IDX[parent]] : new Matrix4()).multiply(loc);
-      M[i].copy(W[i]).multiply(inv[i]);
-    });
-    for (let k = 0; k < n; k++) {
+  const pos = new Float32Array(n * 3), v = new Vector3(), acc = new Vector3();
+  const minLen = 0.012 * H;
+  // candidates: triangles whose corners belong to the body's parts in different amounts
+  const cand = [];
+  for (let t = 0; t < T.length; t += 3) {
+    const a = T[t], b = T[t + 1], c = T[t + 2];
+    if (Math.max(partDiff(a, b), partDiff(b, c), partDiff(c, a)) > 0.25) cand.push(t);
+  }
+  // only the candidates' corners need skinning (a few thousand, not all 36 000)
+  const used = [...new Set(cand.flatMap((t) => [T[t], T[t + 1], T[t + 2]]))];
+  for (const M of poses) {
+    for (const k of used) {
       acc.set(0, 0, 0);
       for (let s = 0; s < 4; s++) {
         const w = skinWeight[k * 4 + s];
@@ -178,23 +238,18 @@ function findBridges(P, T, skinIndex, skinWeight, J, H, minY, part, bridge) {
       pos[k * 3 + 2] = acc.z;
     }
     const posed = (a, b) => Math.hypot(pos[a * 3] - pos[b * 3], pos[a * 3 + 1] - pos[b * 3 + 1], pos[a * 3 + 2] - pos[b * 3 + 2]);
-    for (let t = 0; t < T.length; t += 3) {
+    for (const t of cand) {
       if (bridge[t / 3]) continue;
-      // only a BRIDGE between two different parts, low on the body (a hand fused to the hip, the
-      // inner thighs) — never skin that genuinely stretches, like the armpit or the hip crease
-      const pa = part[T[t]], pb = part[T[t + 1]], pc = part[T[t + 2]];
-      if (pa === pb && pb === pc) continue;
-      const fLow = (Math.min(P[T[t] * 3 + 1], P[T[t + 1] * 3 + 1], P[T[t + 2] * 3 + 1]) - minY) / H;
-      if (fLow > 0.62) continue;
       for (const [a, b] of [[T[t], T[t + 1]], [T[t + 1], T[t + 2]], [T[t + 2], T[t]]]) {
         const l1 = posed(a, b);
-        if (l1 > minLen && l1 > 1.8 * Math.max(restEdge(a, b), 1e-4)) {
+        if (l1 > minLen && l1 > 3 * Math.max(restEdge(a, b), 1e-4)) {
           bridge[t / 3] = 1;
           break;
         }
       }
     }
   }
+  return pw;
 }
 
 const templates = new WeakMap();
@@ -458,7 +513,10 @@ export function dancerTemplate(sourceScene) {
     const k = wid[i], f = fOf(Y(i));
     let rest = 1;
     for (const s of ['L', 'R']) {
-      const a = arm[s][k]; // the arm, fading into the shoulder
+      let a = arm[s][k]; // the arm, fading into the shoulder
+      // below the elbow a vertex is on the arm or it isn't: a blend there (where the hand lay on the
+      // hip) makes a membrane between hand and hip that stretches as soon as the hand moves
+      if (f < 0.62) a = a >= 0.5 ? 1 : 0;
       if (a <= 0.001) continue;
       const hand = 1 - smooth(fWrist - 0.02, fWrist + 0.02, f);
       const fore = smooth(fWrist - 0.02, fWrist + 0.02, f) * (1 - smooth(fElbow - 0.025, fElbow + 0.025, f));
@@ -525,19 +583,85 @@ export function dancerTemplate(sourceScene) {
   }
   for (let r = 0; r < 6; r++) mean[r] = cnt[r] ? mean[r] / cnt[r] : 1;
 
+  // ── loose fragments ──
+  // The scan carries ~150 small pieces not joined to the main surface (finger tips, bracelet bits).
+  // The arm search never reaches them, so they'd stay on the hip as flecks when the hand moves. Each
+  // takes the skinning of the nearest main-surface vertex — a hand vertex if one is right beside it.
+  {
+    const par = new Int32Array(W).map((_, i) => i);
+    const find = (x) => {
+      while (par[x] !== x) x = par[x] = par[par[x]];
+      return x;
+    };
+    for (const [ea, eb] of edges.values()) par[find(ea)] = find(eb);
+    const size = new Map();
+    for (let k = 0; k < W; k++) size.set(find(k), (size.get(find(k)) ?? 0) + 1);
+    let main = -1, best = 0;
+    for (const [r, c] of size) if (c > best) [main, best] = [r, c];
+    const mainV = [], armV = [];
+    for (let i = 0; i < n; i++) {
+      if (find(wid[i]) !== main) continue;
+      mainV.push(i);
+      if (armW[i] > 0.9) armV.push(i);
+    }
+    const nearest = (list, x, y, z, maxD) => {
+      let bi = -1, bd = maxD * maxD;
+      for (const j of list) {
+        const d = (P[j * 3] - x) ** 2 + (P[j * 3 + 1] - y) ** 2 + (P[j * 3 + 2] - z) ** 2;
+        if (d < bd) [bi, bd] = [j, d];
+      }
+      return bi;
+    };
+    const groups = new Map();
+    for (let i = 0; i < n; i++) {
+      const r = find(wid[i]);
+      if (r === main) continue;
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push(i);
+    }
+    for (const vs of groups.values()) {
+      let cx2 = 0, cy2 = 0, cz2 = 0;
+      for (const i of vs) {
+        cx2 += P[i * 3];
+        cy2 += P[i * 3 + 1];
+        cz2 += P[i * 3 + 2];
+      }
+      cx2 /= vs.length;
+      cy2 /= vs.length;
+      cz2 /= vs.length;
+      let src = nearest(armV, cx2, cy2, cz2, 0.03 * H);
+      if (src < 0) src = nearest(mainV, cx2, cy2, cz2, 1e9);
+      if (src < 0) continue;
+      for (const i of vs) {
+        for (let q = 0; q < 4; q++) {
+          skinIndex[i * 4 + q] = skinIndex[src * 4 + q];
+          skinWeight[i * 4 + q] = skinWeight[src * 4 + q];
+        }
+        armW[i] = armW[src];
+      }
+    }
+  }
+
   // ── the "marionette strings" ──
   // Where a hand was fused to the hip (or the thighs to each other) in the scan, triangles bridge
   // two parts; they are ALSO that patch of hip skin. Deleting them leaves see-through holes; keeping
   // them stretches them into strings as the hand moves. So each bridge is DETACHED: it stays on the
   // body (its limb-side corners get duplicated with the body corner's skinning and cloth colour), while
   // the hand keeps its own copy of those vertices and moves away clean.
-  const part = partsOf(n, skinIndex, skinWeight);
   const bridge = new Uint8Array(T.length / 3);
-  for (let t = 0; t < T.length; t += 3) {
-    const a = armW[T[t]], b = armW[T[t + 1]], c = armW[T[t + 2]];
-    if (Math.max(a, b, c) - Math.min(a, b, c) >= 0.4 && (Math.min(P[T[t] * 3 + 1], P[T[t + 1] * 3 + 1], P[T[t + 2] * 3 + 1]) - minY) / H < 0.66) bridge[t / 3] = 1;
+  let pw = null;
+  if (!/[?&]nocull\b/.test(location.search)) {
+    const poses = [...routinePoses(J, H), ...STRESS.map((p) => poseFromEuler(J, p))];
+    pw = findBridges(P, T, skinIndex, skinWeight, H, poses, bridge);
+  } else pw = partWeights(n, skinIndex, skinWeight);
+  // the part a vertex mostly belongs to, and how much of it is limb
+  const part = new Uint8Array(n), limb = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    let best = 0;
+    for (let j = 1; j < 5; j++) if (pw[k * 5 + j] > pw[k * 5 + best]) best = j;
+    part[k] = best;
+    limb[k] = 1 - pw[k * 5];
   }
-  if (!/[?&]nocull\b/.test(location.search)) findBridges(P, T, skinIndex, skinWeight, J, H, minY, part, bridge);
   const SI = Array.from(skinIndex), SW = Array.from(skinWeight), REG = Array.from(region), CON = Array.from(contact);
   const T3 = T.slice();
   const dup = new Map();
@@ -545,19 +669,32 @@ export function dancerTemplate(sourceScene) {
   for (let t = 0; t < T.length; t += 3) {
     if (!bridge[t / 3]) continue;
     const vs = [T[t], T[t + 1], T[t + 2]];
-    // the anchor: a corner on the body if there is one, else the part two corners share
-    let anchor = vs.find((x) => part[x] === 0);
-    if (anchor === undefined) anchor = part[vs[0]] === part[vs[1]] || part[vs[0]] === part[vs[2]] ? vs[0] : vs[1];
+    // the anchor: the corner most on the body (least limb); for a bridge between the two legs, the
+    // leg two corners share
+    let anchor = vs.reduce((m, x) => (limb[x] < limb[m] - 1e-3 ? x : m), vs[0]);
+    if (limb[anchor] > 0.9 && part[vs[1]] === part[vs[2]]) anchor = vs[1];
     for (let j = 0; j < 3; j++) {
       const x = vs[j];
-      if (part[x] === part[anchor]) continue;
+      if (x === anchor) continue;
+      let same = 0;
+      for (let q = 0; q < 5; q++) same += Math.abs(pw[x * 5 + q] - pw[anchor * 5 + q]);
+      if (same / 2 < 0.05) continue; // already skinned like the anchor
       const key = x * 65536 + anchor;
       let d = dup.get(key);
       if (d === undefined) {
         d = P.length / 3;
-        // halfway back toward the body corner: the patch lies flat on the hip instead of standing
-        // out where the hand's side was (still wide enough to close the gap the hand leaves)
-        P.push((P[x * 3] + P[anchor * 3]) / 2, (P[x * 3 + 1] + P[anchor * 3 + 1]) / 2, (P[x * 3 + 2] + P[anchor * 3 + 2]) / 2);
+        // laid flat onto the body's surface at the anchor (its offset along the anchor's normal
+        // removed): the patch covers the gap the hand leaves, flush with the hip, never standing out
+        {
+          const nx = N[anchor * 3], ny = N[anchor * 3 + 1], nz = N[anchor * 3 + 2];
+          let dx = P[x * 3] - P[anchor * 3], dy = P[x * 3 + 1] - P[anchor * 3 + 1], dz = P[x * 3 + 2] - P[anchor * 3 + 2];
+          const dn = dx * nx + dy * ny + dz * nz;
+          dx -= dn * nx;
+          dy -= dn * ny;
+          dz -= dn * nz;
+          // …and drawn in close to it: on a curved hip a flat patch would still poke past the outline
+          P.push(P[anchor * 3] + dx * 0.25, P[anchor * 3 + 1] + dy * 0.25, P[anchor * 3 + 2] + dz * 0.25);
+        }
         N.push(N[x * 3], N[x * 3 + 1], N[x * 3 + 2]);
         C.push(C[anchor * 3], C[anchor * 3 + 1], C[anchor * 3 + 2]); // the hip's cloth, not the hand's skin
         for (let s = 0; s < 4; s++) {

@@ -183,7 +183,7 @@ export class App {
 
   /**
    * Act IV hook: the sky falls to deep night "instantly" (a fast eased sweep)
-   * and, at that same moment, "River Flows in You" hands over to Bruno Mars.
+   * and, at that same moment, Spring Snow hands over to Bruno Mars.
    */
   nightfall(seconds = 1.6) {
     this.music.toPhase2();

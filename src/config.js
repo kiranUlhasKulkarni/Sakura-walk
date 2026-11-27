@@ -151,19 +151,19 @@ export const LANTERNS = {
  * public/audio/ (supply your own copy), and if that's missing too the scene
  * just runs silently.
  *
- *  phase1 — Yiruma, "River Flows in You": loops 0:00 → 3:00, continuously, through the stroll down
+ *  phase1 — Spring Snow: loops end to end, continuously, through the stroll down
  *           the lane, catch, picnic and the scarf knitting.
  *  phase2 — Bruno Mars, "Marry You": crossfades in at the instant night falls
  *           (Act IV fireworks + dance) and carries the proposal.
  */
 export const AUDIO = {
   phase1: {
-    // Yiruma – "River Flows in You": the walk, the catch, the picnic, the dragon and the scarf,
-    // looping 0:00 → 3:00 however long the journey takes
-    url: ['https://www.youtube.com/watch?v=NPBCbTZWnq0'],
-    localSrc: '/audio/river-flows-in-you.mp3',
+    // Spring Snow: the walk, the catch, the picnic, the dragon and the scarf — looping end to end,
+    // however long the journey takes
+    url: ['https://music.youtube.com/watch?v=BCaIO1yELbQ&si=R8I-B2tQtKpqcmTb&drli=1'],
+    localSrc: '/audio/spring-snow.mp3',
     start: 0,
-    loopEnd: 180, // seconds — hard loop point (3:00) back to the start
+    loopEnd: null, // the whole song, round and round
     loop: true,
     volume: 0.6,
     fadeIn: 3.5,
@@ -198,5 +198,5 @@ export const AUDIO = {
     volume: 1.0,
     fadeIn: 0.35,
   },
-  crossfade: 1.2, // seconds for each hand-off: River Flows in You → Marry You (nightfall) → Nezuko (the question) → Tanjiro (YES)
+  crossfade: 1.2, // seconds for each hand-off: Spring Snow → Marry You (nightfall) → Nezuko (the question) → Tanjiro (YES)
 };

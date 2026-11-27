@@ -12,7 +12,7 @@ import { prompt } from '../ui.js';
  *   3 festival stage   E — sit with her by the dragon (Act III, played: Lean in for the scarf)
  *   4 the plaza        walking in hands over to the film: nightfall, the dance and her
  *                      proposal run on their own (Acts IV–V), only YES / NO is his.
- * The soundtrack is the same as the film's: "River Flows in You" loops until
+ * The soundtrack is the same as the film's: Spring Snow loops until
  * nightfall, however long each stage takes.
  */
 const STAGES = [

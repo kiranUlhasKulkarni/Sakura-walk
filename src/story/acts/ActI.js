@@ -21,7 +21,7 @@ const rightOf = (actor, out = v()) => {
  *           trotting along. The camera glides between four framings keyed to
  *           how far they've walked: a front dolly, a side track, a high crane
  *           behind them down the lantern avenue, and a wide from the clearing
- *           as they turn off the lane. "River Flows in You" plays throughout.
+ *           as they turn off the lane. Spring Snow plays throughout.
  *  Arrive   He walks to his mark in the clearing and STAYS there (the
  *           waypoint walk ends anchored, never looping back); she walks to
  *           the mark opposite and they turn to face each other; the cats
